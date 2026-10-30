@@ -323,8 +323,42 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     `;
   }
 
+  // The Schema Markup Validator fetches the page itself, so it can only check pages it can reach: publicly
+  // addressable ones. The editor-facing URL is used, never the one requested (which may carry an access token).
+  #schemaValidatorUrl(pageUrl: string): string | undefined {
+    try {
+      const { protocol, hostname } = new URL(pageUrl);
+      const isPublic =
+        (protocol === "http:" || protocol === "https:") &&
+        hostname.includes(".") &&
+        !hostname.endsWith(".localhost") &&
+        !hostname.endsWith(".local") &&
+        !hostname.endsWith(".internal") &&
+        !/^[\d.]+$/.test(hostname) &&
+        !hostname.includes(":");
+      return isPublic ? `https://validator.schema.org/#url=${encodeURIComponent(pageUrl)}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   #renderJsonLd(result: AgentSpecsResponseModel) {
-    return html`${repeat(
+    const validatorUrl = this.#schemaValidatorUrl(result.requestedUrl);
+    return html`${validatorUrl
+        ? html`<div class="toolbar">
+            <uui-button
+              compact
+              look="secondary"
+              label="Validate at schema.org"
+              href=${validatorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <uui-icon name="icon-out"></uui-icon> Validate at schema.org
+            </uui-button>
+          </div>`
+        : nothing}
+      ${repeat(
       result.jsonLd,
       (_, index) => index,
       (item, index) => {

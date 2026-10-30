@@ -47,7 +47,9 @@ No configuration is required. Optional settings:
 4. The response is split into its parts and shown in three tabs:
    - **Preview** - the front matter and the rendered markdown.
    - **Markdown** - the raw response in a read-only code editor, with a copy button.
-   - **JSON-LD** - each JSON-LD block in a collapsible JSON viewer.
+   - **JSON-LD** - each JSON-LD block in a collapsible JSON viewer, with a link to check the page in the
+     [Schema Markup Validator](https://validator.schema.org/). The validator fetches the page itself, so the link only
+     appears for publicly reachable pages (not localhost or private hostnames), and it never includes an access token.
 
 If the site does not answer with `text/markdown`, you'll see the raw response and a warning that Markdown for
 Agents doesn't appear to be enabled for that URL. Only published pages can be requested.
