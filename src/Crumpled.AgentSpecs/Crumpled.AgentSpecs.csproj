@@ -20,9 +20,9 @@
   <PropertyGroup>
     <PackageId>Crumpled.AgentSpecs</PackageId>
     <Product>Crumpled.AgentSpecs</Product>
-    <Title>Crumpled Package Template</Title>
-    <Description>TODO: describe what Crumpled.AgentSpecs does.</Description>
-    <PackageTags>umbraco plugin package umbraco-marketplace</PackageTags>
+    <Title>Crumpled Agent Specs</Title>
+    <Description>See what AI agents see for every Umbraco page: an Agent Specs view on each content item that requests the front-end URL with Accept: text/markdown (Cloudflare Markdown for Agents) and shows the markdown preview, source and JSON-LD.</Description>
+    <PackageTags>umbraco plugin package umbraco-marketplace markdown agents ai cloudflare json-ld seo</PackageTags>
     <RootNamespace>Crumpled.AgentSpecs</RootNamespace>
     <Authors>Crumpled Dog</Authors>
     <PackageProjectUrl>https://github.com/CrumpledDog/Crumpled.AgentSpecs</PackageProjectUrl>
@@ -63,6 +63,7 @@
   <ItemGroup>
     <!-- Don't include the client folder as part of packaging nuget build -->
     <Content Remove="Client\**" />
+    <Content Remove="appsettings-schema.Crumpled.AgentSpecs.json" />
 
     <!-- However make the Umbraco-package.json included for dotnet pack or nuget package and visible to the solution -->
     <None Include="Client\public\umbraco-package.json" Pack="false" />
@@ -71,6 +72,8 @@
   <ItemGroup>
     <None Include="../../LICENSE" Pack="true" PackagePath="" />
     <None Include="../../icons/icon.png" Pack="true" PackagePath="" />
+    <Content Include="buildTransitive/**" PackagePath="buildTransitive" />
+    <None Include="appsettings-schema.Crumpled.AgentSpecs.json" Pack="true" PackagePath="" />
   </ItemGroup>
 
   <ItemGroup>

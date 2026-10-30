@@ -9,10 +9,16 @@
   <ItemGroup>
     <PackageReference Include="Umbraco.Cms"/>
     <PackageReference Include="Umbraco.Cms.DevelopmentMode.Backoffice"/>
+    <PackageReference Include="ReverseMarkdown"/>
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Crumpled.AgentSpecs\Crumpled.AgentSpecs.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- A ProjectReference doesn't import the package's buildTransitive props, so register the settings schema explicitly -->
+    <UmbracoJsonSchemaFiles Include="..\Crumpled.AgentSpecs\appsettings-schema.Crumpled.AgentSpecs.json" Weight="-50" />
   </ItemGroup>
 
   <PropertyGroup>

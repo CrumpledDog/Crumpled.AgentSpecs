@@ -22,6 +22,7 @@
     <PackageVersion Include="Umbraco.Cms.Web.Website" Version="[17.7.0,18.0.0)" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.11" />
     <PackageVersion Include="Microsoft.ICU.ICU4C.Runtime" Version="72.1.0.3" />
+    <PackageVersion Include="ReverseMarkdown" Version="6.3.0" />
   </ItemGroup>
 
   <ItemGroup>
