@@ -46,6 +46,24 @@ public class AgentMarkdownFetcherTests
         Assert.Equal("café", result.Markdown);
     }
 
+    [Theory]
+    [InlineData("not-a-real-charset")]
+    [InlineData("utf-7")]
+    [InlineData("shift_jis")]
+    public async Task FetchAsync_UnknownOrUnavailableCharset_FallsBackToUtf8(string charset)
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("café"));
+            content.Headers.TryAddWithoutValidation("Content-Type", $"text/markdown; charset={charset}");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+    }
+
     [Fact]
     public async Task FetchAsync_NoCharsetDeclared_DecodesAsUtf8()
     {

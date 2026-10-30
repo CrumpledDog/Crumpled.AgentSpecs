@@ -129,9 +129,10 @@ namespace Crumpled.AgentSpecs.Services
                 {
                     encoding = Encoding.GetEncoding(charset.Trim('"', (char)39, ' '));
                 }
-                catch (ArgumentException)
+                catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
                 {
-                    // Unknown charset name: keep UTF-8.
+                    // Unknown charset name, or a known encoding that isn't available in this process (a code page
+                    // without a registered provider, disabled UTF-7): keep UTF-8.
                 }
             }
 
