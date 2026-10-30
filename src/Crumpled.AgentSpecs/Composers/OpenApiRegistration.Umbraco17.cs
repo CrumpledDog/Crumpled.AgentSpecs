@@ -26,7 +26,7 @@ namespace Crumpled.AgentSpecs.Composers
             {
                 opt.SwaggerDoc(Constants.ApiName, new OpenApiInfo
                 {
-                    Title = "Crumpled Package Template Backoffice API",
+                    Title = "Crumpled Agent Specs Backoffice API",
                     Version = "1.0",
                 });
 
