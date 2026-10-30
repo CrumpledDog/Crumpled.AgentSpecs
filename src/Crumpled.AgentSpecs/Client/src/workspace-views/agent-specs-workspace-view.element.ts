@@ -40,6 +40,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   #culture?: string | null;
   #urlRepository = new UmbDocumentUrlRepository(this);
   #reloadTimer?: ReturnType<typeof setTimeout>;
+  #fetchId = 0;
+  #userPickedUrl = false;
   #eventContext?: typeof UMB_ACTION_EVENT_CONTEXT.TYPE;
 
   // Publishing, unpublishing or renaming a document changes its URLs, so refresh the links when it is saved.
@@ -84,6 +86,9 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         (unique) => {
           if (unique === this.#unique) return;
           this.#unique = unique ?? undefined;
+          this.#fetchId++; // any fetch still in flight belongs to the previous document
+          this.#userPickedUrl = false;
+          this._loading = false;
           this._result = undefined;
           this._error = undefined;
           this._links = [];
@@ -117,14 +122,19 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   #selectDefaultLink() {
     if (!this._links.length) return;
     const forCulture = this._links.find((link) => link.culture === this.#culture);
-    // Keep an explicit pick while it is still one of the document's links; otherwise fall back to the current culture's.
-    const stillValid = this._links.some((link) => link.url === this._selectedUrl);
-    this._selectedUrl = stillValid ? this._selectedUrl : (forCulture ?? this._links[0]).url;
+    // Keep a pick the editor made themselves while it is still one of the document's links. An automatic
+    // default is not a choice, so it follows the culture being edited.
+    const keepPick = this.#userPickedUrl && this._links.some((link) => link.url === this._selectedUrl);
+    if (!keepPick) {
+      this.#userPickedUrl = false;
+      this._selectedUrl = (forCulture ?? this._links[0]).url;
+    }
   }
 
   async #fetch() {
     if (!this.#unique || !this._selectedUrl) return;
 
+    const fetchId = ++this.#fetchId;
     this._loading = true;
     this._error = undefined;
     this._result = undefined;
@@ -132,6 +142,9 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     const { data, error, response } = await getMarkdown({
       query: { documentId: this.#unique, url: this._selectedUrl },
     });
+
+    // The editor moved to another document (or fetched again) while this was in flight.
+    if (fetchId !== this.#fetchId) return;
 
     if (data) {
       this._result = data;
@@ -214,7 +227,10 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
               value: link.url,
               selected: link.url === this._selectedUrl,
             }))}
-            @change=${(e: Event) => (this._selectedUrl = (e.target as HTMLInputElement).value)}
+            @change=${(e: Event) => {
+              this.#userPickedUrl = true;
+              this._selectedUrl = (e.target as HTMLInputElement).value;
+            }}
           ></uui-select>
           <uui-button
             look="primary"

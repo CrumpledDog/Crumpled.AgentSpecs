@@ -101,4 +101,31 @@ public class AgentMarkdownFetcherTests
         Assert.True(result.Truncated);
         Assert.Equal(10, result.Raw.Length);
     }
+
+    [Theory]
+    [InlineData("https://example.com/page", "https://example.com:8080/admin")]
+    [InlineData("https://example.com/page", "http://example.com/page")]
+    [InlineData("http://example.com/page", "http://example.com:8080/admin")]
+    [InlineData("http://example.com/page", "https://example.com:8443/page")]
+    public async Task FetchAsync_RedirectToADifferentPortOrSchemeOfTheSameHost_IsRefused(string requested, string redirect)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(redirect) } });
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri(requested), CancellationToken.None));
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HttpToHttpsUpgradeOnTheDefaultPorts_IsFollowed()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.Scheme == "http"
+            ? new HttpResponseMessage(HttpStatusCode.MovedPermanently) { Headers = { Location = new Uri("https://example.com/page") } }
+            : Markdown("secure"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("http://example.com/page"), CancellationToken.None);
+
+        Assert.Equal("https://example.com/page", result.FinalUrl);
+        Assert.Equal("secure", result.Markdown);
+    }
 }

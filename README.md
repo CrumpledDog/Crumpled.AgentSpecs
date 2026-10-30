@@ -43,7 +43,7 @@ No configuration is required. Optional settings:
 2. Nothing is requested until you click **Fetch as agent**.
 3. The backoffice asks a small authenticated Management API endpoint to make the request, so it works whatever
    domain the site is served from (no CORS problems). The endpoint only accepts URLs that belong to the content
-   item, and only follows redirects to the same host.
+   item, and only follows redirects within the requested origin (same host, port and scheme, plus an `http` to `https` upgrade).
 4. The response is split into its parts and shown in three tabs:
    - **Preview** - the front matter and the rendered markdown.
    - **Markdown** - the raw response in a read-only code editor, with a copy button.

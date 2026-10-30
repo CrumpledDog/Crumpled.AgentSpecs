@@ -43,9 +43,9 @@ namespace Crumpled.AgentSpecs.Services
                 if ((int)response.StatusCode is >= 300 and < 400 && location is not null)
                 {
                     var next = location.IsAbsoluteUri ? location : new Uri(current, location);
-                    if (hop >= MaxRedirects || !string.Equals(next.Host, url.Host, StringComparison.OrdinalIgnoreCase))
+                    if (hop >= MaxRedirects || !IsAllowedRedirect(url, next))
                     {
-                        throw new InvalidOperationException($"Refused to follow a redirect to {next}. Only same-host redirects are followed (max {MaxRedirects}).");
+                        throw new InvalidOperationException($"Refused to follow a redirect to {next}. Only redirects within the requested origin (or an http to https upgrade) are followed (max {MaxRedirects}).");
                     }
 
                     current = next;
@@ -75,6 +75,23 @@ namespace Crumpled.AgentSpecs.Services
                     JsonLd = isMarkdown ? parsed.JsonLd : [],
                 };
             }
+        }
+
+        // The validated URL's origin is the only trust boundary: same host, same effective port, same scheme.
+        // The one exception is the common http -> https upgrade on the default ports.
+        private static bool IsAllowedRedirect(Uri original, Uri next)
+        {
+            if (!string.Equals(next.Host, original.Host, StringComparison.OrdinalIgnoreCase) || next.Scheme is not ("http" or "https"))
+            {
+                return false;
+            }
+
+            if (next.Scheme == original.Scheme)
+            {
+                return next.Port == original.Port;
+            }
+
+            return original.Scheme == "http" && original.IsDefaultPort && next.Scheme == "https" && next.IsDefaultPort;
         }
 
         public static string ResolveUserAgent(AgentSpecsOptions settings)
