@@ -1,7 +1,7 @@
 {
   "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
   "Title": "Crumpled.AgentSpecs",
-  "Description": "TODO: one or two sentences describing what this package does for Umbraco editors/developers.",
+  "Description": "See what AI agents see for every Umbraco page: an Agent Specs view on each content item that requests the front-end URL with Accept: text/markdown (Cloudflare Markdown for Agents) and shows the markdown preview, source and JSON-LD.",
   "AuthorDetails": {
     "Name": "Crumpled Dog",
     "Description": "Umbraco consultants and developers specialising in Cloudflare, Azure, LLMs, AI, and Agents",
@@ -26,5 +26,5 @@
   "LicenseTypes": [ "Free" ],
   "IssueTrackerUrl": "https://github.com/CrumpledDog/Crumpled.AgentSpecs/issues",
   "PackageType": "Package",
-  "Tags": [ "TODO" ]
+  "Tags": [ "markdown", "agents", "ai", "cloudflare", "json-ld", "seo" ]
 }

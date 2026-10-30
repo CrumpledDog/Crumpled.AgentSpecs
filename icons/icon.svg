@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="512" height="512" role="img" aria-labelledby="title desc">
+  <title id="title">Crumpled.AgentSpecs</title>
+  <desc id="desc">Circular Crumpled Dog badge showing a markdown page with a folded corner and a JSON-LD braces chip.</desc>
+
+  <defs>
+    <clipPath id="field">
+      <circle cx="64" cy="64" r="59.37"/>
+    </clipPath>
+  </defs>
+
+  <!-- Outer ring and red field -->
+  <circle cx="64" cy="64" r="63.75" fill="#B5B6B6"/>
+  <circle cx="64" cy="64" r="59.37" fill="#C31630"/>
+
+  <!-- Darker wavy lower band, shared by the Crumpled badge family -->
+  <path fill="#93172D" d="m123.28,64.08c0,32.79-26.58,59.37-59.37,59.37S4.53,96.87,4.53,64.08c15.6,14.02,35.17,14.17,54.5,0s47.59-15.49,64.24,0Z"/>
+
+  <g clip-path="url(#field)">
+    <!-- Page with folded corner -->
+    <path fill="#FFFFFF" d="M36 22H70L90 42V96a6 6 0 0 1-6 6H36a6 6 0 0 1-6-6V28a6 6 0 0 1 6-6Z"/>
+    <path fill="#D1D0D1" d="M70 22V36a6 6 0 0 0 6 6H90Z"/>
+
+    <!-- Markdown "M" and down arrow -->
+    <g fill="none" stroke="#5A101F" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M38 80V60L46 70L54 60V80"/>
+      <path d="M68 60V78M61 71L68 79L75 71"/>
+    </g>
+
+    <!-- JSON-LD chip -->
+    <rect x="64" y="78" width="34" height="26" rx="8" fill="#5A101F" stroke="#FFFFFF" stroke-width="3.5"/>
+    <g fill="none" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M77 83.5C74 83.5 73 85 73 87.5V89C73 90.5 72 91 70.5 91C72 91 73 91.5 73 93V94.5C73 97 74 98.5 77 98.5"/>
+      <path d="M85 83.5C88 83.5 89 85 89 87.5V89C89 90.5 90 91 91.5 91C90 91 89 91.5 89 93V94.5C89 97 88 98.5 85 98.5"/>
+    </g>
+  </g>
+
+  <!-- Inner rim -->
+  <circle cx="64" cy="64" r="59.37" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+</svg>

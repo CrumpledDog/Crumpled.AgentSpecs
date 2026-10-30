@@ -1,6 +1,6 @@
 # Copilot / Agent Instructions — Crumpled.AgentSpecs
 
-TODO: describe what this package does. See [README.md](../README.md) for the feature overview and
+See what AI agents receive for a page: an Agent Specs workspace view requests a content item's front-end URL with Accept: text/markdown via a Management API proxy. See [README.md](../README.md) for the feature overview and
 [CONTRIBUTING.md](../CONTRIBUTING.md) for the full branching strategy.
 
 ## Cross-Branch Workflow (v1 → v2) — Check This Every Time
