@@ -51,8 +51,8 @@ No configuration is required. Optional settings:
      [Schema Markup Validator](https://validator.schema.org/). The validator fetches the page itself, so the link only
      appears for publicly reachable pages (not localhost or private hostnames), and it never includes an access token.
 
-If the site does not answer with `text/markdown`, you'll see the raw response and a warning that Markdown for
-Agents doesn't appear to be enabled for that URL. Only published pages can be requested.
+If the site does not answer with `text/markdown`, you'll see the raw response and a warning that the URL didn't
+answer with markdown. Only published pages can be requested.
 
 ## Customising which URLs are offered
 

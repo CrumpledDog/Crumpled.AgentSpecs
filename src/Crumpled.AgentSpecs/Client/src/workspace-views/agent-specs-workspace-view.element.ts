@@ -211,8 +211,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     return html`
       <uui-box headline="Agent Specs">
         <p class="muted">
-          Requests the published page with <code>Accept: text/markdown</code>, the way an agent would
-          (needs Cloudflare Markdown for Agents on the site).
+          Requests the published page with <code>Accept: text/markdown</code>, the way an agent would. The site
+          needs to answer with markdown, for example with Cloudflare Markdown for Agents.
         </p>
         <div class="request">
           ${this._links.length > 1
@@ -269,8 +269,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         ${!result.isMarkdown
           ? html`<uui-tag color="warning" class="error">
               <uui-icon name="icon-alert"></uui-icon>
-              Markdown for Agents doesn't appear to be enabled for this URL (got
-              ${result.contentType ?? "an unknown content type"}).
+              This URL didn't answer with markdown (got ${result.contentType ?? "an unknown content type"}). The site
+              needs to respond to <code>Accept: text/markdown</code>, for example with Cloudflare Markdown for Agents.
             </uui-tag>`
           : nothing}
       </uui-box>
