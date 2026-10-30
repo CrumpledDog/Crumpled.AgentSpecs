@@ -1,0 +1,8 @@
+<Project>
+  <PropertyGroup>
+    <!-- Set to 18 on the develop/v2 branch line to build against Umbraco CMS 18 instead. See
+         src/Crumpled.AgentSpecs/Composers/OpenApiRegistration.Umbraco{17,18}.cs and
+         Directory.Packages.props for what this toggles. -->
+    <UmbracoTargetMajor>17</UmbracoTargetMajor>
+  </PropertyGroup>
+</Project>

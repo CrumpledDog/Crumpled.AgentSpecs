@@ -1,0 +1,30 @@
+{
+  "$schema": "https://marketplace.umbraco.com/umbraco-marketplace-schema.json",
+  "Title": "Crumpled.AgentSpecs",
+  "Description": "TODO: one or two sentences describing what this package does for Umbraco editors/developers.",
+  "AuthorDetails": {
+    "Name": "Crumpled Dog",
+    "Description": "Umbraco consultants and developers specialising in Cloudflare, Azure, LLMs, AI, and Agents",
+    "Url": "https://github.com/CrumpledDog",
+    "ImageUrl": "https://github.com/crumpleddog.png",
+    "Contributors": [
+      {
+        "Name": "Crumpled Dog",
+        "Url": "https://github.com/CrumpledDog/"
+      },
+      {
+        "Name": "Jeavon Leopold",
+        "Url": "https://github.com/Jeavon"
+      },
+      {
+        "Name": "Marc Goodson",
+        "Url": "https://github.com/marcemarc"
+      }
+    ]
+  },
+  "Category": "Developer Tools",
+  "LicenseTypes": [ "Free" ],
+  "IssueTrackerUrl": "https://github.com/CrumpledDog/Crumpled.AgentSpecs/issues",
+  "PackageType": "Package",
+  "Tags": [ "TODO" ]
+}

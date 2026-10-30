@@ -1,0 +1,14 @@
+{
+  "id": "Crumpled.AgentSpecs",
+  "name": "Crumpled.AgentSpecs",
+  "version": "0.0.0",
+  "allowTelemetry": true,
+  "extensions": [
+    {
+      "name": "Crumpled Package Template Bundle",
+      "alias": "Crumpled.AgentSpecs.Bundle",
+      "type": "bundle",
+      "js": "/App_Plugins/CrumpledAgentSpecs/crumpled-agent-specs.js"
+    }
+  ]
+}
