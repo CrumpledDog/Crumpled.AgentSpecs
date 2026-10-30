@@ -12,14 +12,11 @@ import {
 import { DOMPurify } from "@umbraco-cms/backoffice/external/dompurify";
 import { marked } from "@umbraco-cms/backoffice/external/marked";
 import { UmbLitElement } from "@umbraco-cms/backoffice/lit-element";
-import {
-  UMB_DOCUMENT_WORKSPACE_CONTEXT,
-  UmbDocumentUrlRepository,
-} from "@umbraco-cms/backoffice/document";
+import { UMB_DOCUMENT_WORKSPACE_CONTEXT } from "@umbraco-cms/backoffice/document";
 import { UMB_ACTION_EVENT_CONTEXT } from "@umbraco-cms/backoffice/action";
 import { UmbRequestReloadStructureForEntityEvent } from "@umbraco-cms/backoffice/entity-action";
 import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
-import { getMarkdown } from "../api/index.js";
+import { getMarkdown, getUrls } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
 
 type DocumentLink = { culture: string | null; url: string };
@@ -38,7 +35,6 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   #unique?: string;
   #entityType?: string;
   #culture?: string | null;
-  #urlRepository = new UmbDocumentUrlRepository(this);
   #reloadTimer?: ReturnType<typeof setTimeout>;
   #fetchId = 0;
   #userPickedUrl = false;
@@ -110,12 +106,11 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     const unique = this.#unique;
     if (!unique) return;
 
-    // Same source as the Links panel; all cultures are requested so any of them can be picked.
-    const { data } = await this.#urlRepository.requestUrls([unique]);
+    // The server lists the same URLs as the Links panel, after any URL processing a site has registered, so a
+    // site that narrows its Links panel (for example to one hostname) gets the same list here.
+    const { data } = await getUrls({ query: { documentId: unique } });
     if (unique !== this.#unique) return;
-    this._links = (data?.[0]?.urls ?? [])
-      .filter((link): link is { culture: string | null; url: string } => !!link.url)
-      .map((link) => ({ culture: link.culture, url: link.url }));
+    this._links = (data?.urls ?? []).map((link) => ({ culture: link.culture ?? null, url: link.url }));
     this.#selectDefaultLink();
   }
 
@@ -216,22 +211,24 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     return html`
       <uui-box headline="Agent Specs">
         <p class="muted">
-          Requests the published page with <code>Accept: text/markdown</code>, the way an agent would
-          (needs Cloudflare Markdown for Agents on the site).
+          Requests the published page with <code>Accept: text/markdown</code>, the way an agent would. The site
+          needs to answer with markdown, for example with Cloudflare Markdown for Agents.
         </p>
         <div class="request">
-          <uui-select
-            label="URL"
-            .options=${this._links.map((link) => ({
-              name: link.culture ? `${link.url}  (${link.culture})` : link.url,
-              value: link.url,
-              selected: link.url === this._selectedUrl,
-            }))}
-            @change=${(e: Event) => {
-              this.#userPickedUrl = true;
-              this._selectedUrl = (e.target as HTMLInputElement).value;
-            }}
-          ></uui-select>
+          ${this._links.length > 1
+            ? html`<uui-select
+                label="URL"
+                .options=${this._links.map((link) => ({
+                  name: link.culture ? `${link.url}  (${link.culture})` : link.url,
+                  value: link.url,
+                  selected: link.url === this._selectedUrl,
+                }))}
+                @change=${(e: Event) => {
+                  this.#userPickedUrl = true;
+                  this._selectedUrl = (e.target as HTMLInputElement).value;
+                }}
+              ></uui-select>`
+            : html`<span class="single-url">${this._selectedUrl}</span>`}
           <uui-button
             look="primary"
             color="positive"
@@ -272,8 +269,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         ${!result.isMarkdown
           ? html`<uui-tag color="warning" class="error">
               <uui-icon name="icon-alert"></uui-icon>
-              Markdown for Agents doesn't appear to be enabled for this URL (got
-              ${result.contentType ?? "an unknown content type"}).
+              This URL didn't answer with markdown (got ${result.contentType ?? "an unknown content type"}). The site
+              needs to respond to <code>Accept: text/markdown</code>, for example with Cloudflare Markdown for Agents.
             </uui-tag>`
           : nothing}
       </uui-box>
@@ -288,7 +285,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
           </uui-tab>
           ${result.jsonLd.length
             ? html`<uui-tab label="JSON-LD" ?active=${this._tab === "jsonld"} @click=${() => (this._tab = "jsonld")}>
-                JSON-LD (${result.jsonLd.length})
+                JSON-LD${result.jsonLd.length > 1 ? ` (${result.jsonLd.length})` : ""}
               </uui-tab>`
             : nothing}
         </uui-tab-group>
@@ -326,8 +323,42 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     `;
   }
 
+  // The Schema Markup Validator fetches the page itself, so it can only check pages it can reach: publicly
+  // addressable ones. The editor-facing URL is used, never the one requested (which may carry an access token).
+  #schemaValidatorUrl(pageUrl: string): string | undefined {
+    try {
+      const { protocol, hostname } = new URL(pageUrl);
+      const isPublic =
+        (protocol === "http:" || protocol === "https:") &&
+        hostname.includes(".") &&
+        !hostname.endsWith(".localhost") &&
+        !hostname.endsWith(".local") &&
+        !hostname.endsWith(".internal") &&
+        !/^[\d.]+$/.test(hostname) &&
+        !hostname.includes(":");
+      return isPublic ? `https://validator.schema.org/#url=${encodeURIComponent(pageUrl)}` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   #renderJsonLd(result: AgentSpecsResponseModel) {
-    return html`${repeat(
+    const validatorUrl = this.#schemaValidatorUrl(result.requestedUrl);
+    return html`${validatorUrl
+        ? html`<div class="toolbar">
+            <uui-button
+              compact
+              look="secondary"
+              label="Validate at schema.org"
+              href=${validatorUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <uui-icon name="icon-out"></uui-icon> Validate at schema.org
+            </uui-button>
+          </div>`
+        : nothing}
+      ${repeat(
       result.jsonLd,
       (_, index) => index,
       (item, index) => {
@@ -371,6 +402,13 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         display: flex;
         gap: var(--uui-size-space-3);
         align-items: center;
+      }
+
+      .single-url {
+        flex: 1;
+        min-width: 0;
+        word-break: break-all;
+        font-family: monospace;
       }
 
       .request uui-select {

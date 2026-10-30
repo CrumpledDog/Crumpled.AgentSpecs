@@ -1,17 +1,14 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
-using Umbraco.Cms.Api.Management.Factories;
-using Umbraco.Cms.Core.Services;
 
 namespace Crumpled.AgentSpecs.Services
 {
     /// <summary>
-    /// SSRF guard: the proxy may only ever request one of the document's own URLs, as listed by the
-    /// same factory behind the backoffice Links panel.
+    /// SSRF guard: the proxy may only ever request one of the URLs offered for the document, as listed by
+    /// <see cref="DocumentUrlTargetService"/> (Umbraco's own list behind the Links panel, after any URL processing).
     /// </summary>
     public class DocumentUrlValidator(
-        IContentService contentService,
-        IDocumentUrlFactory documentUrlFactory,
+        DocumentUrlTargetService targetService,
         IHttpContextAccessor httpContextAccessor,
         IOptions<AgentSpecsOptions> options)
     {
@@ -22,26 +19,39 @@ namespace Crumpled.AgentSpecs.Services
             UrlNotAllowed,
         }
 
-        public async Task<(Outcome Outcome, Uri? Url)> ValidateAsync(Guid documentId, string url)
+        /// <returns>
+        /// When valid, the URL to request and the URL to show the editor. They differ when URL processing adds
+        /// to the request, for example an access token.
+        /// </returns>
+        public async Task<(Outcome Outcome, Uri? RequestUrl, Uri? DisplayUrl)> ValidateAsync(Guid documentId, string url, CancellationToken cancellationToken = default)
         {
-            var content = contentService.GetById(documentId);
-            if (content is null)
+            var targets = await targetService.GetTargetsAsync(documentId, cancellationToken);
+            if (targets is null)
             {
-                return (Outcome.DocumentNotFound, null);
+                return (Outcome.DocumentNotFound, null, null);
             }
 
             var requested = Resolve(url);
             if (requested is null)
             {
-                return (Outcome.UrlNotAllowed, null);
+                return (Outcome.UrlNotAllowed, null, null);
             }
 
-            var urls = await documentUrlFactory.CreateUrlsAsync(content);
-            var allowed = urls
-                .Select(x => Resolve(x.Url))
-                .Any(x => x is not null && IsSameUrl(x, requested));
+            foreach (var target in targets)
+            {
+                var display = Resolve(target.Url);
+                if (display is null || !IsSameUrl(display, requested))
+                {
+                    continue;
+                }
 
-            return allowed ? (Outcome.Valid, requested) : (Outcome.UrlNotAllowed, null);
+                var request = Resolve(target.RequestUrl);
+                return request is null
+                    ? (Outcome.UrlNotAllowed, null, null)
+                    : (Outcome.Valid, request, display);
+            }
+
+            return (Outcome.UrlNotAllowed, null, null);
         }
 
         // Only the scheme and host are case-insensitive. The path and query are compared ordinally in their
