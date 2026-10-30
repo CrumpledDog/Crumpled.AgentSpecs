@@ -9,6 +9,7 @@ import {
   state,
   unsafeHTML,
 } from "@umbraco-cms/backoffice/external/lit";
+import type { PropertyValues } from "@umbraco-cms/backoffice/external/lit";
 import { DOMPurify } from "@umbraco-cms/backoffice/external/dompurify";
 import { marked } from "@umbraco-cms/backoffice/external/marked";
 import { UmbLitElement } from "@umbraco-cms/backoffice/lit-element";
@@ -21,6 +22,12 @@ import type { AgentSpecsResponseModel } from "../api/index.js";
 
 type DocumentLink = { culture: string | null; url: string };
 type ViewTab = "preview" | "markdown" | "jsonld";
+
+type JsonViewerElement = HTMLElement & {
+  updateComplete: Promise<unknown>;
+  expandAll(): void;
+  collapseAll(): void;
+};
 
 const MINIMAP_PREFERENCE_KEY = "crumpled-agent-specs:minimap";
 
@@ -43,6 +50,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _error?: string;
   @state() private _tab: ViewTab = "preview";
   @state() private _minimap = readMinimapPreference();
+  @state() private _jsonExpanded = true;
 
   #unique?: string;
   #entityType?: string;
@@ -142,6 +150,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     if (!this.#unique || !this._selectedUrl) return;
 
     const fetchId = ++this.#fetchId;
+    this._jsonExpanded = true;
     this._loading = true;
     this._error = undefined;
     this._result = undefined;
@@ -214,6 +223,22 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       | (HTMLElement & { editor?: { updateOptions(options: { minimap: boolean }): void } })
       | null;
     codeEditor?.editor?.updateOptions({ minimap: this._minimap });
+  }
+
+  // json-viewer renders collapsed. Open (or close) every block once it has rendered its data, and again whenever
+  // the editor toggles it, a new response arrives or the tab is shown.
+  override updated(changed: PropertyValues) {
+    super.updated(changed);
+    if (this._tab === "jsonld" && (changed.has("_tab") || changed.has("_result") || changed.has("_jsonExpanded"))) {
+      this.#applyJsonExpansion();
+    }
+  }
+
+  #applyJsonExpansion() {
+    const viewers = this.shadowRoot?.querySelectorAll<JsonViewerElement>("json-viewer") ?? [];
+    viewers.forEach((viewer) =>
+      viewer.updateComplete.then(() => (this._jsonExpanded ? viewer.expandAll() : viewer.collapseAll())),
+    );
   }
 
   override render() {
@@ -380,9 +405,17 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
 
   #renderJsonLd(result: AgentSpecsResponseModel) {
     const validatorUrl = this.#schemaValidatorUrl(result.requestedUrl);
-    return html`${validatorUrl
-        ? html`<div class="toolbar">
-            <uui-button
+    return html`<div class="toolbar">
+        <uui-button
+          compact
+          look="secondary"
+          label=${this._jsonExpanded ? "Collapse all" : "Expand all"}
+          @click=${() => (this._jsonExpanded = !this._jsonExpanded)}
+        >
+          ${this._jsonExpanded ? "Collapse all" : "Expand all"}
+        </uui-button>
+        ${validatorUrl
+          ? html`<uui-button
               compact
               look="secondary"
               label="Validate at schema.org"
@@ -391,9 +424,9 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
               rel="noopener noreferrer"
             >
               <uui-icon name="icon-out"></uui-icon> Validate at schema.org
-            </uui-button>
-          </div>`
-        : nothing}
+            </uui-button>`
+          : nothing}
+      </div>
       ${repeat(
       result.jsonLd,
       (_, index) => index,
