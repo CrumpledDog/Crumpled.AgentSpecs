@@ -5,7 +5,7 @@
   "allowTelemetry": true,
   "extensions": [
     {
-      "name": "Crumpled Package Template Bundle",
+      "name": "Crumpled Agent Specs Bundle",
       "alias": "Crumpled.AgentSpecs.Bundle",
       "type": "bundle",
       "js": "/App_Plugins/CrumpledAgentSpecs/crumpled-agent-specs.js"
