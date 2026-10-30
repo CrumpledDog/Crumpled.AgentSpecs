@@ -30,7 +30,7 @@ No configuration is required. Optional settings:
 
 | Setting | Default | Description |
 |---|---|---|
-| `UserAgent` | `Crumpled.AgentSpecs-Client/1.0` | The `User-Agent` sent with every request. Set this if your WAF or bot rules need to recognise (or allow-list) the request. |
+| `UserAgent` | `Crumpled.AgentSpecs/1.0` | The `User-Agent` sent with every request. Set this if your WAF or bot rules need to recognise (or allow-list) the request. |
 | `TimeoutSeconds` | `30` | How long to wait for the page. |
 | `MaxBodyBytes` | `8388608` | The response is cut off (and flagged as truncated) beyond this size. |
 

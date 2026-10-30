@@ -10,7 +10,7 @@ namespace Crumpled.AgentSpecs.Services
     {
         public const string HttpClientName = "Crumpled.AgentSpecs";
 
-        public const string DefaultUserAgent = "Crumpled.AgentSpecs-Client/1.0";
+        public const string DefaultUserAgent = "Crumpled.AgentSpecs/1.0";
 
         private const int MaxRedirects = 5;
 
