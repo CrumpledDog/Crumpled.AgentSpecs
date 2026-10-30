@@ -1,16 +1,15 @@
 using System.Net;
 using System.Security.Claims;
 using Crumpled.AgentSpecs.Controllers;
+using Crumpled.AgentSpecs.Models;
 using Crumpled.AgentSpecs.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using NSubstitute;
-using Umbraco.Cms.Api.Management.Factories;
-using Umbraco.Cms.Api.Management.ViewModels.Document;
-using Umbraco.Cms.Core.Models;
 using Umbraco.Cms.Core.Services;
+using static Crumpled.AgentSpecs.Tests.UrlTestSupport;
 
 namespace Crumpled.AgentSpecs.Tests;
 
@@ -18,15 +17,13 @@ public class CrumpledAgentSpecsApiControllerTests
 {
     private const string PageUrl = "https://www.example.com/";
 
-    private static readonly Guid DocumentId = Guid.NewGuid();
-
     private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
     {
-        public int Requests { get; private set; }
+        public List<HttpRequestMessage> Requests { get; } = [];
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            Requests++;
+            Requests.Add(request);
             return Task.FromResult(respond(request));
         }
     }
@@ -49,19 +46,16 @@ public class CrumpledAgentSpecsApiControllerTests
 
     private static (CrumpledAgentSpecsApiController Controller, IContentService ContentService, StubHandler Handler) Create(
         bool authorized,
-        Func<HttpRequestMessage, HttpResponseMessage>? respond = null)
+        Func<HttpRequestMessage, HttpResponseMessage>? respond = null,
+        IAgentSpecsUrlProcessor? processor = null,
+        bool documentExists = true)
     {
         var handler = new StubHandler(respond ?? (_ => new HttpResponseMessage(HttpStatusCode.OK)));
         var clients = Substitute.For<IHttpClientFactory>();
         clients.CreateClient(AgentMarkdownFetcher.HttpClientName).Returns(_ => new HttpClient(handler, disposeHandler: false));
         var options = Options.Create(new AgentSpecsOptions());
 
-        var content = Substitute.For<IContent>();
-        var contentService = Substitute.For<IContentService>();
-        contentService.GetById(DocumentId).Returns(content);
-
-        var urlFactory = Substitute.For<IDocumentUrlFactory>();
-        urlFactory.CreateUrlsAsync(content).Returns([new DocumentUrlInfo { Culture = null, Url = PageUrl, Provider = "test", Message = null }]);
+        var (targetService, contentService) = CreateTargetService(documentExists, [PageUrl], processor is null ? [] : [processor]);
 
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(new DefaultHttpContext());
@@ -71,7 +65,8 @@ public class CrumpledAgentSpecsApiControllerTests
             .Returns(authorized ? AuthorizationResult.Success() : AuthorizationResult.Failed());
 
         var controller = new CrumpledAgentSpecsApiController(
-            new DocumentUrlValidator(contentService, urlFactory, accessor, options),
+            targetService,
+            new DocumentUrlValidator(targetService, accessor, options),
             new AgentMarkdownFetcher(clients, options),
             authorization)
         {
@@ -91,7 +86,7 @@ public class CrumpledAgentSpecsApiControllerTests
         var response = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status403Forbidden, response.StatusCode);
         contentService.DidNotReceiveWithAnyArgs().GetById(default(Guid));
-        Assert.Equal(0, handler.Requests);
+        Assert.Empty(handler.Requests);
     }
 
     [Fact]
@@ -102,7 +97,7 @@ public class CrumpledAgentSpecsApiControllerTests
         var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
 
         Assert.IsType<OkObjectResult>(result);
-        Assert.Equal(1, handler.Requests);
+        Assert.Single(handler.Requests);
     }
 
     [Fact]
@@ -114,5 +109,65 @@ public class CrumpledAgentSpecsApiControllerTests
 
         var response = Assert.IsType<ObjectResult>(result);
         Assert.Equal(StatusCodes.Status502BadGateway, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetMarkdown_ProcessorAddsAToken_TheTokenIsRequestedButNeverReported()
+    {
+        var processor = new FakeUrlProcessor(urls => urls.Select(url => new AgentSpecsUrlTarget(url, url + "?UMB_AUTH_TOKEN=secret")).ToList());
+        var (controller, _, handler) = Create(authorized: true, processor: processor);
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        var model = Assert.IsType<AgentSpecsResponseModel>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal("https://www.example.com/?UMB_AUTH_TOKEN=secret", Assert.Single(handler.Requests).RequestUri!.ToString());
+        Assert.Equal(PageUrl, model.RequestedUrl);
+        Assert.Equal("https://www.example.com/?UMB_AUTH_TOKEN=redacted", model.FinalUrl);
+        Assert.DoesNotContain("secret", model.RequestedUrl + model.FinalUrl);
+    }
+
+    [Fact]
+    public async Task GetUrls_EditorWithoutAccessToTheDocument_GetsForbiddenAndNothingIsLookedUp()
+    {
+        var (controller, contentService, _) = Create(authorized: false);
+
+        var result = await controller.GetUrls(DocumentId, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status403Forbidden, Assert.IsType<ObjectResult>(result).StatusCode);
+        contentService.DidNotReceiveWithAnyArgs().GetById(default(Guid));
+    }
+
+    [Fact]
+    public async Task GetUrls_UnknownDocument_Returns404()
+    {
+        var (controller, _, _) = Create(authorized: true, documentExists: false);
+
+        var result = await controller.GetUrls(DocumentId, CancellationToken.None);
+
+        Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public async Task GetUrls_ListsTheDocumentsUrls()
+    {
+        var (controller, _, _) = Create(authorized: true);
+
+        var result = await controller.GetUrls(DocumentId, CancellationToken.None);
+
+        var model = Assert.IsType<AgentSpecsUrlsResponseModel>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([PageUrl], model.Urls.Select(url => url.Url));
+    }
+
+    [Fact]
+    public async Task GetUrls_ProcessorAddsAToken_TheTokenIsNotSentToTheBrowser()
+    {
+        var processor = new FakeUrlProcessor(urls => urls.Select(url => new AgentSpecsUrlTarget(url, url + "?UMB_AUTH_TOKEN=secret")).ToList());
+        var (controller, _, handler) = Create(authorized: true, processor: processor);
+
+        var result = await controller.GetUrls(DocumentId, CancellationToken.None);
+
+        var model = Assert.IsType<AgentSpecsUrlsResponseModel>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal([PageUrl], model.Urls.Select(url => url.Url));
+        Assert.Empty(handler.Requests);
     }
 }

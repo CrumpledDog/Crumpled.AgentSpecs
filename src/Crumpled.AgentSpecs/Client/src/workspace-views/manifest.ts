@@ -8,7 +8,7 @@ export const manifests: Array<UmbExtensionManifest> = [
     meta: {
       label: "Agent Specs",
       pathname: "agent-specs",
-      icon: "icon-code",
+      icon: "icon-glasses",
     },
     conditions: [
       {

@@ -52,6 +52,42 @@ No configuration is required. Optional settings:
 If the site does not answer with `text/markdown`, you'll see the raw response and a warning that Markdown for
 Agents doesn't appear to be enabled for that URL. Only published pages can be requested.
 
+## Customising which URLs are offered
+
+By default the view offers every URL Umbraco lists for the item. If your site narrows or rewrites the URLs editors
+see (for example it hides hostnames that don't belong to the current environment, or adds an access token so a
+locked-down front end can be requested), implement `IAgentSpecsUrlProcessor` and register it:
+
+```csharp
+public class MyUrlProcessor : IAgentSpecsUrlProcessor
+{
+    public Task<IReadOnlyList<AgentSpecsUrlTarget>> ProcessAsync(IReadOnlyList<string> urls, CancellationToken cancellationToken)
+    {
+        // Keep the URLs for the current environment's hostname, and request them with an access token.
+        IReadOnlyList<AgentSpecsUrlTarget> targets = urls
+            .Where(url => url.StartsWith("https://www.example.com/"))
+            .Select(url => new AgentSpecsUrlTarget(Url: url, RequestUrl: url + "?token=..."))
+            .ToList();
+
+        return Task.FromResult(targets);
+    }
+}
+
+public class MyComposer : IComposer
+{
+    public void Compose(IUmbracoBuilder builder) =>
+        builder.Services.AddScoped<IAgentSpecsUrlProcessor, MyUrlProcessor>();
+}
+```
+
+- `Url` is the document URL as shown to the editor. It is what identifies the target, and entries that aren't one of
+  the document's own URLs are ignored, so a processor can narrow or rewrite but never add URLs.
+- `RequestUrl` is what is actually requested. It never leaves the server, and any query parameter it adds to `Url`
+  is redacted from the URLs reported back in the response.
+- The last registration wins, so a site can replace processing registered by another package.
+- Use a scoped (or transient) registration if the processor depends on request-scoped services such as the current
+  backoffice user.
+
 ## Requirements
 
 - The site must answer `Accept: text/markdown` requests with markdown. The easiest way is

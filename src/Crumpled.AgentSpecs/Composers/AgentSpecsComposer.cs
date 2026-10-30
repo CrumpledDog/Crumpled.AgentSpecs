@@ -24,6 +24,9 @@ namespace Crumpled.AgentSpecs.Composers
                     UseCookies = false,
                 });
 
+            // No IAgentSpecsUrlProcessor is registered by default, so every URL Umbraco lists is offered as-is.
+            // Register one (the last registration wins) to narrow or rewrite them.
+            builder.Services.AddScoped<DocumentUrlTargetService>();
             builder.Services.AddScoped<DocumentUrlValidator>();
             builder.Services.AddScoped<AgentMarkdownFetcher>();
         }

@@ -19,8 +19,15 @@ namespace Crumpled.AgentSpecs.Services
             "content-signal", "cf-cache-status", "vary", "cache-control", "server", "cf-ray", "age",
         ];
 
-        public async Task<AgentSpecsResponseModel> FetchAsync(Uri url, CancellationToken cancellationToken)
+        /// <param name="url">The URL to request.</param>
+        /// <param name="cancellationToken">A token to cancel the request.</param>
+        /// <param name="displayUrl">
+        /// The URL to report back, when it differs from <paramref name="url"/> (for example because an access token
+        /// was added to the request). Anything added to the request's query string is redacted from the reported URLs.
+        /// </param>
+        public async Task<AgentSpecsResponseModel> FetchAsync(Uri url, CancellationToken cancellationToken, Uri? displayUrl = null)
         {
+            displayUrl ??= url;
             var settings = options.Value;
             var userAgent = ResolveUserAgent(settings);
             var client = httpClientFactory.CreateClient(HttpClientName);
@@ -61,8 +68,8 @@ namespace Crumpled.AgentSpecs.Services
 
                 return new AgentSpecsResponseModel
                 {
-                    RequestedUrl = url.ToString(),
-                    FinalUrl = current.ToString(),
+                    RequestedUrl = displayUrl.ToString(),
+                    FinalUrl = RedactAddedQuery(current, url, displayUrl),
                     StatusCode = (int)response.StatusCode,
                     ContentType = response.Content.Headers.ContentType?.ToString(),
                     IsMarkdown = isMarkdown,
@@ -77,6 +84,30 @@ namespace Crumpled.AgentSpecs.Services
                 };
             }
         }
+
+        // URL processing may add query parameters to the request (an access token, say). They must not be reported
+        // back to the browser, so any parameter present on the request but not on the display URL is redacted.
+        private static string RedactAddedQuery(Uri final, Uri request, Uri display)
+        {
+            var added = QueryNames(request).Except(QueryNames(display), StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            if (added.Count == 0 || string.IsNullOrEmpty(final.Query))
+            {
+                return final.ToString();
+            }
+
+            var parts = final.Query.TrimStart('?').Split('&').Select(part =>
+            {
+                var separator = part.IndexOf('=');
+                var name = Uri.UnescapeDataString(separator < 0 ? part : part[..separator]);
+                return added.Contains(name) ? $"{(separator < 0 ? part : part[..separator])}=redacted" : part;
+            });
+
+            return new UriBuilder(final) { Query = string.Join("&", parts) }.Uri.ToString();
+        }
+
+        private static IEnumerable<string> QueryNames(Uri uri) =>
+            uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
+                .Select(part => Uri.UnescapeDataString(part.Contains('=') ? part[..part.IndexOf('=')] : part));
 
         // The validated URL's origin is the only trust boundary: same host, same effective port, same scheme.
         // The one exception is the common http -> https upgrade on the default ports.
