@@ -53,9 +53,6 @@ Agents doesn't appear to be enabled for that URL. Only published pages can be re
 ## Requirements
 
 - **Cloudflare Markdown for Agents** must be enabled for the site's zone (or the relevant paths).
-- If your site compresses responses, the companion package
-  [Crumpled.Cloudflare.NoCompressForAgents](https://github.com/CrumpledDog/Crumpled.Cloudflare.NoCompressForAgents)
-  keeps markdown responses uncompressed.
 
 Each Umbraco major has its own package version line, so pick the one that matches your site:
 
