@@ -15,10 +15,10 @@ public class MarkdownForAgentsMiddleware(RequestDelegate next)
 {
     private static readonly Converter Converter = new(new Config
     {
-        UnknownTags = Config.UnknownTagsOption.Bypass,
+        Tags = { Unknown = Config.UnknownTagsOption.Bypass },
         GithubFlavored = true,
-        RemoveComments = true,
-        SmartHrefHandling = true,
+        Formatting = { RemoveComments = true },
+        Links = { SmartHref = true },
     });
 
     private static readonly string[] StrippedElements =
@@ -80,7 +80,7 @@ public class MarkdownForAgentsMiddleware(RequestDelegate next)
 
         string? Meta(string name) => doc.DocumentNode
             .SelectSingleNode($"//meta[@name='{name}' or @property='{name}']")
-            ?.GetAttributeValue("content", null);
+            ?.GetAttributeValue("content", string.Empty) is { Length: > 0 } content ? content : null;
 
         var title = Meta("title") ?? Meta("og:title");
         var description = Meta("description") ?? Meta("og:description");

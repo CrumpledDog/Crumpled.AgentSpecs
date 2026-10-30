@@ -16,6 +16,11 @@
     <ProjectReference Include="..\Crumpled.AgentSpecs\Crumpled.AgentSpecs.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- A ProjectReference doesn't import the package's buildTransitive props, so register the settings schema explicitly -->
+    <UmbracoJsonSchemaFiles Include="..\Crumpled.AgentSpecs\appsettings-schema.Crumpled.AgentSpecs.json" Weight="-50" />
+  </ItemGroup>
+
   <PropertyGroup>
     <!--
       Opt-in to app-local ICU to ensure consistent globalization APIs across different platforms.
