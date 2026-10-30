@@ -52,7 +52,54 @@ Agents doesn't appear to be enabled for that URL. Only published pages can be re
 
 ## Requirements
 
-- **Cloudflare Markdown for Agents** must be enabled for the site's zone (or the relevant paths).
+- The site must answer `Accept: text/markdown` requests with markdown. The easiest way is
+  **Cloudflare Markdown for Agents**, enabled for the site's zone (or the relevant paths).
+
+### Sites without Cloudflare
+
+Agent Specs only needs a `text/markdown` response, so it works with any site that does content negotiation, not
+just Cloudflare. Two options:
+
+- Install [AI Visibility for Umbraco](https://marketplace.umbraco.com/package/umbraco.community.aivisibility),
+  which serves markdown for `Accept: text/markdown` requests (and `.md` URLs).
+- Or add a small middleware of your own. This sketch uses [ReverseMarkdown](https://www.nuget.org/packages/ReverseMarkdown)
+  to convert the HTML response when the client asks for markdown:
+
+```csharp
+// Program.cs - before app.UseUmbraco()
+app.Use(async (context, next) =>
+{
+    var wantsMarkdown = HttpMethods.IsGet(context.Request.Method)
+        && !context.Request.Path.StartsWithSegments("/umbraco")
+        && context.Request.GetTypedHeaders().Accept.Any(a => a.MediaType.Equals("text/markdown", StringComparison.OrdinalIgnoreCase));
+    if (!wantsMarkdown) { await next(); return; }
+
+    var original = context.Response.Body;
+    await using var buffer = new MemoryStream();
+    context.Response.Body = buffer;
+    try { await next(); } finally { context.Response.Body = original; }
+
+    buffer.Position = 0;
+    if (context.Response.StatusCode != 200 || context.Response.ContentType?.StartsWith("text/html") != true)
+    {
+        await buffer.CopyToAsync(original);
+        return;
+    }
+
+    var markdown = new ReverseMarkdown.Converter().Convert(Encoding.UTF8.GetString(buffer.ToArray()));
+    context.Response.ContentType = "text/markdown; charset=utf-8";
+    context.Response.ContentLength = null;
+    context.Response.Headers.Append("Vary", "Accept");
+    await original.WriteAsync(Encoding.UTF8.GetBytes(markdown));
+});
+```
+
+The DemoSite in this repo has a fuller version, [`MarkdownForAgentsMiddleware`](src/Crumpled.AgentSpecs.DemoSite/MarkdownForAgents/MarkdownForAgentsMiddleware.cs),
+which also strips headers, navigation and footers, and adds front matter and a trailing JSON-LD block the way
+Cloudflare does. It exists for testing only and is not part of the package.
+
+The **JSON-LD** tab appears when the response ends with a fenced `json` block, which is the format Cloudflare
+uses. If your middleware doesn't append one, you'll still get the Preview and Markdown tabs.
 
 Each Umbraco major has its own package version line, so pick the one that matches your site:
 

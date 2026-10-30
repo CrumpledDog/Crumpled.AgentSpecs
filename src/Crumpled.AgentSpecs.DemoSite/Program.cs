@@ -14,6 +14,9 @@ WebApplication app = builder.Build();
 await app.BootUmbracoAsync();
 
 
+// Test-only stand-in for Cloudflare Markdown for Agents.
+app.UseMiddleware<Crumpled.AgentSpecs.DemoSite.MarkdownForAgents.MarkdownForAgentsMiddleware>();
+
 app.UseUmbraco()
     .WithMiddleware(u =>
     {
