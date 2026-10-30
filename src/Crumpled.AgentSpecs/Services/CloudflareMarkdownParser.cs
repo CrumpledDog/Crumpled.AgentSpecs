@@ -21,7 +21,26 @@ namespace Crumpled.AgentSpecs.Services
             var frontmatter = ExtractFrontmatter(ref text);
             var jsonLd = ExtractJsonLd(ref text);
 
-            return new Result(frontmatter, text.Trim(), jsonLd);
+            return new Result(frontmatter, TrimBlankLines(text), jsonLd);
+        }
+
+        // Drop the blank separator lines around the body, but keep the first line's own indentation: it can be an
+        // indented code block, and Trim() would turn that into a paragraph.
+        private static string TrimBlankLines(string text)
+        {
+            var start = 0;
+            while (start < text.Length)
+            {
+                var lineEnd = text.IndexOf((char)10, start);
+                if (lineEnd < 0 || !string.IsNullOrWhiteSpace(text[start..lineEnd]))
+                {
+                    break;
+                }
+
+                start = lineEnd + 1;
+            }
+
+            return text[start..].TrimEnd();
         }
 
         private static FrontmatterModel ExtractFrontmatter(ref string text)

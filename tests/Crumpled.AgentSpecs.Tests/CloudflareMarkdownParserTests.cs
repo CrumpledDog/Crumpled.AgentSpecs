@@ -82,4 +82,20 @@ public class CloudflareMarkdownParserTests
         Assert.Empty(result.Frontmatter.Fields);
         Assert.Equal("Body", result.Markdown);
     }
+
+    [Fact]
+    public void Parse_BodyStartingWithAnIndentedCodeBlock_KeepsTheIndentation()
+    {
+        var result = CloudflareMarkdownParser.Parse("---\ntitle: T\n---\n\n    first code line\n    second code line\n\n");
+
+        Assert.Equal("    first code line\n    second code line", result.Markdown);
+    }
+
+    [Fact]
+    public void Parse_BlankLinesAroundTheBody_AreTrimmed()
+    {
+        var result = CloudflareMarkdownParser.Parse("\n  \n# Title\n\ntext\n\n\n");
+
+        Assert.Equal("# Title\n\ntext", result.Markdown);
+    }
 }

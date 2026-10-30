@@ -30,6 +30,38 @@ public class AgentMarkdownFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_DecodesTheBodyUsingTheDeclaredCharset()
+    {
+        var latin1 = Encoding.GetEncoding("iso-8859-1");
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(latin1.GetBytes("café"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/markdown") { CharSet = "iso-8859-1" };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+        Assert.Equal("café", result.Markdown);
+    }
+
+    [Fact]
+    public async Task FetchAsync_NoCharsetDeclared_DecodesAsUtf8()
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("café"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/markdown");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+    }
+
+    [Fact]
     public async Task FetchAsync_SendsAcceptMarkdownAndDefaultUserAgent()
     {
         var handler = new StubHandler(_ => Markdown("# Hello"));

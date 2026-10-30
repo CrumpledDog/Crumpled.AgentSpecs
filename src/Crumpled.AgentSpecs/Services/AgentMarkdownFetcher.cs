@@ -52,8 +52,9 @@ namespace Crumpled.AgentSpecs.Services
                     continue;
                 }
 
-                var (body, truncated) = await ReadBodyAsync(response, settings.MaxBodyBytes, timeout.Token);
+                var (bytes, truncated) = await ReadBodyAsync(response, settings.MaxBodyBytes, timeout.Token);
                 stopwatch.Stop();
+                var body = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
 
                 var isMarkdown = response.Content.Headers.ContentType?.MediaType?.Equals("text/markdown", StringComparison.OrdinalIgnoreCase) == true;
                 var parsed = CloudflareMarkdownParser.Parse(body);
@@ -118,7 +119,27 @@ namespace Crumpled.AgentSpecs.Services
             return headers;
         }
 
-        private static async Task<(string Body, bool Truncated)> ReadBodyAsync(HttpResponseMessage response, int maxBytes, CancellationToken cancellationToken)
+        // Honour the declared charset (UTF-8 when absent or unknown) and any byte order mark.
+        private static string Decode(byte[] bytes, string? charset)
+        {
+            var encoding = Encoding.UTF8;
+            if (!string.IsNullOrWhiteSpace(charset))
+            {
+                try
+                {
+                    encoding = Encoding.GetEncoding(charset.Trim('"', (char)39, ' '));
+                }
+                catch (ArgumentException)
+                {
+                    // Unknown charset name: keep UTF-8.
+                }
+            }
+
+            using var reader = new StreamReader(new MemoryStream(bytes), encoding, detectEncodingFromByteOrderMarks: true);
+            return reader.ReadToEnd();
+        }
+
+        private static async Task<(byte[] Body, bool Truncated)> ReadBodyAsync(HttpResponseMessage response, int maxBytes, CancellationToken cancellationToken)
         {
             await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
             using var buffer = new MemoryStream();
@@ -138,7 +159,7 @@ namespace Crumpled.AgentSpecs.Services
                 buffer.Write(chunk, 0, read);
             }
 
-            return (Encoding.UTF8.GetString(buffer.GetBuffer(), 0, (int)buffer.Length), truncated);
+            return (buffer.ToArray(), truncated);
         }
     }
 }
