@@ -38,7 +38,7 @@ public class AgentMarkdownFetcherTests
 
         var request = Assert.Single(handler.Requests);
         Assert.Contains("text/markdown", request.Headers.Accept.ToString());
-        Assert.StartsWith("Crumpled.AgentSpecs/", request.Headers.UserAgent.ToString());
+        Assert.Equal("Crumpled.AgentSpecs-Client/1.0", request.Headers.UserAgent.ToString());
         Assert.Equal(request.Headers.UserAgent.ToString(), result.UserAgent);
         Assert.True(result.IsMarkdown);
         Assert.Equal("# Hello", result.Markdown);

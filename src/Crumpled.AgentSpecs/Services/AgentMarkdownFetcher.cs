@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Net.Http.Headers;
-using System.Reflection;
 using System.Text;
 using Crumpled.AgentSpecs.Models;
 using Microsoft.Extensions.Options;
@@ -10,6 +9,8 @@ namespace Crumpled.AgentSpecs.Services
     public class AgentMarkdownFetcher(IHttpClientFactory httpClientFactory, IOptions<AgentSpecsOptions> options)
     {
         public const string HttpClientName = "Crumpled.AgentSpecs";
+
+        public const string DefaultUserAgent = "Crumpled.AgentSpecs-Client/1.0";
 
         private const int MaxRedirects = 5;
 
@@ -83,9 +84,7 @@ namespace Crumpled.AgentSpecs.Services
                 return settings.UserAgent.Trim();
             }
 
-            var version = typeof(AgentMarkdownFetcher).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Split('+')[0] ?? "1.0";
-            return $"Crumpled.AgentSpecs/{version} (+https://github.com/CrumpledDog/Crumpled.AgentSpecs)";
+            return DefaultUserAgent;
         }
 
         private static Dictionary<string, string> CollectHeaders(HttpResponseMessage response)
