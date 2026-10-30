@@ -93,8 +93,9 @@ namespace Crumpled.AgentSpecs.Services
         }
 
         // URL processing may add to the request's query string (an access token, say), or change a parameter the
-        // listed URL already has. None of that may be reported back to the browser, so any name/value pair on the
-        // request that isn't on the display URL is redacted wherever it appears in the URL being reported.
+        // listed URL already has. None of that may be reported back to the browser. A redirect can also carry the
+        // token on, re-encoded or nested inside another parameter (for example ReturnUrl=%2Fpage%3Ftoken%3Dsecret),
+        // so the reported query is redacted by value, in any encoding, not just by exact name/value match.
         private static string RedactAddedQuery(Uri reported, Uri request, Uri display)
         {
             if (string.IsNullOrEmpty(reported.Query))
@@ -102,47 +103,60 @@ namespace Crumpled.AgentSpecs.Services
                 return reported.ToString();
             }
 
-            var unmatchedDisplayPairs = QueryPairs(display).ToList();
-            var secretPairs = new HashSet<(string Name, string Value)>();
-            foreach (var pair in QueryPairs(request))
-            {
-                var match = unmatchedDisplayPairs.FindIndex(candidate => PairsEqual(candidate, pair));
-                if (match >= 0)
-                {
-                    unmatchedDisplayPairs.RemoveAt(match);
-                }
-                else
-                {
-                    secretPairs.Add((pair.Name.ToLowerInvariant(), pair.Value));
-                }
-            }
-
+            var displayPairs = QueryPairs(display).ToHashSet();
+            var secretPairs = QueryPairs(request).Where(pair => !displayPairs.Contains(pair)).ToHashSet();
             if (secretPairs.Count == 0)
             {
                 return reported.ToString();
             }
 
+            var secretValues = secretPairs.Select(pair => pair.Value).Where(value => value.Length > 0).Distinct().ToList();
+
             var parts = reported.Query.TrimStart('?').Split('&').Select(part =>
             {
                 var separator = part.IndexOf('=');
                 var rawName = separator < 0 ? part : part[..separator];
-                var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
-                return secretPairs.Contains((Uri.UnescapeDataString(rawName).ToLowerInvariant(), value)) ? $"{rawName}=redacted" : part;
+                var rawValue = separator < 0 ? string.Empty : part[(separator + 1)..];
+                var pair = (FormDecode(rawName).ToLowerInvariant(), FormDecode(rawValue));
+
+                // A parameter the listed URL legitimately has is kept. Anything else is redacted if it is a secret the
+                // request added, or if it contains one (nested, or in another encoding).
+                var redact = secretPairs.Contains(pair)
+                    || (!displayPairs.Contains(pair) && ContainsAny(rawValue, secretValues));
+                return redact ? $"{rawName}=redacted" : part;
             });
 
             return new UriBuilder(reported) { Query = string.Join("&", parts) }.Uri.ToString();
         }
 
-        private static bool PairsEqual((string Name, string Value) a, (string Name, string Value) b) =>
-            string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase) && string.Equals(a.Value, b.Value, StringComparison.Ordinal);
+        // Query strings are form-encoded, so '+' means a space. Decoding names and values the same way on both
+        // sides means %20 and + (and upper/lower-case hex) compare equal.
+        private static string FormDecode(string value) => Uri.UnescapeDataString(value.Replace('+', ' '));
+
+        // Whether a raw query value contains any of the secrets once percent-decoded, once or twice, reading '+' as
+        // either a space or a literal plus.
+        private static bool ContainsAny(string rawValue, IReadOnlyList<string> secrets)
+        {
+            var spaced = rawValue.Replace('+', ' ');
+            var forms = new[]
+            {
+                rawValue,
+                Uri.UnescapeDataString(rawValue),
+                Uri.UnescapeDataString(Uri.UnescapeDataString(rawValue)),
+                Uri.UnescapeDataString(spaced),
+                Uri.UnescapeDataString(Uri.UnescapeDataString(spaced)),
+            };
+
+            return secrets.Any(secret => forms.Any(form => form.Contains(secret, StringComparison.OrdinalIgnoreCase)));
+        }
 
         private static IEnumerable<(string Name, string Value)> QueryPairs(Uri uri) =>
             uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Select(part =>
             {
                 var separator = part.IndexOf('=');
                 return (
-                    Uri.UnescapeDataString(separator < 0 ? part : part[..separator]),
-                    separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]));
+                    FormDecode(separator < 0 ? part : part[..separator]).ToLowerInvariant(),
+                    separator < 0 ? string.Empty : FormDecode(part[(separator + 1)..]));
             });
 
         // The validated URL's origin is the only trust boundary: same host, same effective port, same scheme.
