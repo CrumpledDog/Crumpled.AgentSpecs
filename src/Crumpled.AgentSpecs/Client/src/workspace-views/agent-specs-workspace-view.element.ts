@@ -22,6 +22,17 @@ import type { AgentSpecsResponseModel } from "../api/index.js";
 type DocumentLink = { culture: string | null; url: string };
 type ViewTab = "preview" | "markdown" | "jsonld";
 
+const MINIMAP_PREFERENCE_KEY = "crumpled-agent-specs:minimap";
+
+// Shown by default; whether to hide it is remembered per viewer (a convenience, so storage failures are ignored).
+function readMinimapPreference(): boolean {
+  try {
+    return localStorage.getItem(MINIMAP_PREFERENCE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
 @customElement("crumpled-agent-specs-workspace-view")
 export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _links: Array<DocumentLink> = [];
@@ -31,6 +42,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _result?: AgentSpecsResponseModel;
   @state() private _error?: string;
   @state() private _tab: ViewTab = "preview";
+  @state() private _minimap = readMinimapPreference();
 
   #unique?: string;
   #entityType?: string;
@@ -189,6 +201,21 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     navigator.clipboard?.writeText(text);
   }
 
+  #toggleMinimap() {
+    this._minimap = !this._minimap;
+    try {
+      localStorage.setItem(MINIMAP_PREFERENCE_KEY, this._minimap ? "1" : "0");
+    } catch {
+      // A remembered preference is a convenience only; storage can be unavailable.
+    }
+
+    // The editor only re-reads this option when other properties change, so apply it to the live editor too.
+    const codeEditor = this.shadowRoot?.querySelector("umb-code-editor") as
+      | (HTMLElement & { editor?: { updateOptions(options: { minimap: boolean }): void } })
+      | null;
+    codeEditor?.editor?.updateOptions({ minimap: this._minimap });
+  }
+
   override render() {
     return html`
       <umb-body-layout header-fit-height>
@@ -311,6 +338,14 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   #renderSource(result: AgentSpecsResponseModel) {
     return html`
       <div class="toolbar">
+        <uui-button
+          compact
+          look="secondary"
+          label=${this._minimap ? "Hide minimap" : "Show minimap"}
+          @click=${this.#toggleMinimap}
+        >
+          ${this._minimap ? "Hide minimap" : "Show minimap"}
+        </uui-button>
         <uui-button compact look="secondary" label="Copy" @click=${() => this.#copy(result.raw)}>
           <uui-icon name="icon-documents"></uui-icon> Copy
         </uui-button>
@@ -318,6 +353,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       <umb-code-editor
         language=${result.isMarkdown ? "markdown" : "html"}
         .code=${result.raw}
+        ?disable-minimap=${!this._minimap}
         readonly
       ></umb-code-editor>
     `;
@@ -431,6 +467,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       .toolbar {
         display: flex;
         justify-content: flex-end;
+        gap: var(--uui-size-space-2);
         margin-bottom: var(--uui-size-space-3);
       }
 
