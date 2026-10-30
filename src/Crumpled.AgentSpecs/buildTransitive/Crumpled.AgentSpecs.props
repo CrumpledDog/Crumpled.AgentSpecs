@@ -1,4 +1,8 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+	<!-- The Razor SDK generates a buildTransitive props file with this exact name to register the package's static
+	     web assets (App_Plugins) with consuming sites. Packing our own file under the same name replaces it, so it
+	     must keep this import or the backoffice files are never served. -->
+	<Import Project="$(MSBuildThisFileDirectory)..\buildMultiTargeting\Crumpled.AgentSpecs.props" Condition="Exists('$(MSBuildThisFileDirectory)..\buildMultiTargeting\Crumpled.AgentSpecs.props')" />
 	<ItemGroup>
 		<UmbracoJsonSchemaFiles Include="$(MSBuildThisFileDirectory)..\appsettings-schema.Crumpled.AgentSpecs.json" Weight="-50" />
 	</ItemGroup>
