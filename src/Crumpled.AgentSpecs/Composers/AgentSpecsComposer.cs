@@ -14,10 +14,14 @@ namespace Crumpled.AgentSpecs.Composers
             builder.Services.AddHttpContextAccessor();
             builder.Services
                 .AddHttpClient(AgentMarkdownFetcher.HttpClientName)
+                // The fetcher enforces the configured TimeoutSeconds itself, so the client's built-in 100s limit must not cap it.
+                .ConfigureHttpClient(client => client.Timeout = Timeout.InfiniteTimeSpan)
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     AllowAutoRedirect = false,
                     AutomaticDecompression = System.Net.DecompressionMethods.All,
+                    // The handler is pooled and shared by every editor, so cookies from one fetch must never be replayed on another.
+                    UseCookies = false,
                 });
 
             builder.Services.AddScoped<DocumentUrlValidator>();

@@ -16,6 +16,8 @@ import {
   UMB_DOCUMENT_WORKSPACE_CONTEXT,
   UmbDocumentUrlRepository,
 } from "@umbraco-cms/backoffice/document";
+import { UMB_ACTION_EVENT_CONTEXT } from "@umbraco-cms/backoffice/action";
+import { UmbRequestReloadStructureForEntityEvent } from "@umbraco-cms/backoffice/entity-action";
 import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
@@ -34,8 +36,19 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _tab: ViewTab = "preview";
 
   #unique?: string;
+  #entityType?: string;
   #culture?: string | null;
   #urlRepository = new UmbDocumentUrlRepository(this);
+  #reloadTimer?: ReturnType<typeof setTimeout>;
+  #eventContext?: typeof UMB_ACTION_EVENT_CONTEXT.TYPE;
+
+  // Publishing, unpublishing or renaming a document changes its URLs, so refresh the links when it is saved.
+  #onReloadRequest = (event: Event) => {
+    const reload = event as UmbRequestReloadStructureForEntityEvent;
+    if (reload.getUnique() !== this.#unique || reload.getEntityType() !== this.#entityType) return;
+    clearTimeout(this.#reloadTimer);
+    this.#reloadTimer = setTimeout(() => this.#loadLinks(), 300);
+  };
 
   constructor() {
     super();
@@ -51,7 +64,14 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       );
     });
 
+    this.consumeContext(UMB_ACTION_EVENT_CONTEXT, (context) => {
+      this.#eventContext?.removeEventListener(UmbRequestReloadStructureForEntityEvent.TYPE, this.#onReloadRequest);
+      this.#eventContext = context;
+      this.#eventContext?.addEventListener(UmbRequestReloadStructureForEntityEvent.TYPE, this.#onReloadRequest);
+    });
+
     this.consumeContext(UMB_DOCUMENT_WORKSPACE_CONTEXT, (context) => {
+      this.#entityType = context?.getEntityType();
       this.observe(
         context?.isNew,
         (isNew) => {
@@ -66,6 +86,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
           this.#unique = unique ?? undefined;
           this._result = undefined;
           this._error = undefined;
+          this._links = [];
+          this._selectedUrl = undefined;
           this.#loadLinks();
         },
         "observeUnique",
@@ -73,13 +95,19 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     });
   }
 
+  override disconnectedCallback() {
+    super.disconnectedCallback();
+    clearTimeout(this.#reloadTimer);
+    this.#eventContext?.removeEventListener(UmbRequestReloadStructureForEntityEvent.TYPE, this.#onReloadRequest);
+  }
+
   async #loadLinks() {
-    this._links = [];
-    this._selectedUrl = undefined;
-    if (!this.#unique) return;
+    const unique = this.#unique;
+    if (!unique) return;
 
     // Same source as the Links panel; all cultures are requested so any of them can be picked.
-    const { data } = await this.#urlRepository.requestUrls([this.#unique]);
+    const { data } = await this.#urlRepository.requestUrls([unique]);
+    if (unique !== this.#unique) return;
     this._links = (data?.[0]?.urls ?? [])
       .filter((link): link is { culture: string | null; url: string } => !!link.url)
       .map((link) => ({ culture: link.culture, url: link.url }));
@@ -88,10 +116,10 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
 
   #selectDefaultLink() {
     if (!this._links.length) return;
-    const stillValid = this._links.some((link) => link.url === this._selectedUrl);
     const forCulture = this._links.find((link) => link.culture === this.#culture);
-    // Keep an explicit pick until the document or culture changes the available links.
-    this._selectedUrl = stillValid && !forCulture ? this._selectedUrl : (forCulture ?? this._links[0]).url;
+    // Keep an explicit pick while it is still one of the document's links; otherwise fall back to the current culture's.
+    const stillValid = this._links.some((link) => link.url === this._selectedUrl);
+    this._selectedUrl = stillValid ? this._selectedUrl : (forCulture ?? this._links[0]).url;
   }
 
   async #fetch() {
@@ -101,7 +129,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     this._error = undefined;
     this._result = undefined;
 
-    const { data, error } = await getMarkdown({
+    const { data, error, response } = await getMarkdown({
       query: { documentId: this.#unique, url: this._selectedUrl },
     });
 
@@ -111,15 +139,29 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     } else {
       const problem = error as { title?: string; detail?: string } | undefined;
       this._error = [problem?.title, problem?.detail].filter(Boolean).join(": ") || "The request failed.";
+      // A refused URL usually means the document's links changed since they were loaded.
+      if (response?.status === 400) this.#loadLinks();
     }
 
     this._loading = false;
   }
 
-  #renderMarkdown(markdown: string) {
+  #renderMarkdown(markdown: string, pageUrl: string) {
     const clean = DOMPurify.sanitize(marked.parse(markdown, { async: false }) as string);
     const template = document.createElement("template");
     template.innerHTML = clean;
+    // Relative links and images belong to the fetched page, not the backoffice, so resolve them against it.
+    template.content.querySelectorAll("[href], [src]").forEach((element) => {
+      for (const attribute of ["href", "src"]) {
+        const value = element.getAttribute(attribute);
+        if (value === null) continue;
+        try {
+          element.setAttribute(attribute, new URL(value, pageUrl).href);
+        } catch {
+          element.removeAttribute(attribute);
+        }
+      }
+    });
     template.content.querySelectorAll("a[href]").forEach((anchor) => {
       anchor.setAttribute("target", "_blank");
       anchor.setAttribute("rel", "noopener noreferrer");
@@ -249,7 +291,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
             ${fields.map(([key, value]) => html`<dt>${key}</dt><dd>${value}</dd>`)}
           </dl>`
         : nothing}
-      <div class="markdown">${this.#renderMarkdown(result.markdown)}</div>
+      <div class="markdown">${this.#renderMarkdown(result.markdown, result.finalUrl)}</div>
     `;
   }
 

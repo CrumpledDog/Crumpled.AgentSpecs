@@ -73,4 +73,13 @@ public class CloudflareMarkdownParserTests
         Assert.Equal("plain text", result.Frontmatter.Fields["description"]);
         Assert.Equal("Body", result.Markdown);
     }
+
+    [Fact]
+    public void Parse_EmptyFrontmatterBlock_ReturnsTheBody()
+    {
+        var result = CloudflareMarkdownParser.Parse("---\n---\n\nBody");
+
+        Assert.Empty(result.Frontmatter.Fields);
+        Assert.Equal("Body", result.Markdown);
+    }
 }

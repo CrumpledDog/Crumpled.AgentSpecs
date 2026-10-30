@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Api.Management.Factories;
 using Umbraco.Cms.Core.Services;
 
@@ -11,7 +12,8 @@ namespace Crumpled.AgentSpecs.Services
     public class DocumentUrlValidator(
         IContentService contentService,
         IDocumentUrlFactory documentUrlFactory,
-        IHttpContextAccessor httpContextAccessor)
+        IHttpContextAccessor httpContextAccessor,
+        IOptions<AgentSpecsOptions> options)
     {
         public enum Outcome
         {
@@ -37,10 +39,17 @@ namespace Crumpled.AgentSpecs.Services
             var urls = await documentUrlFactory.CreateUrlsAsync(content);
             var allowed = urls
                 .Select(x => Resolve(x.Url))
-                .Any(x => x is not null && Uri.Compare(x, requested, UriComponents.HttpRequestUrl, UriFormat.Unescaped, StringComparison.OrdinalIgnoreCase) == 0);
+                .Any(x => x is not null && IsSameUrl(x, requested));
 
             return allowed ? (Outcome.Valid, requested) : (Outcome.UrlNotAllowed, null);
         }
+
+        // Only the scheme and host are case-insensitive. The path and query are compared ordinally in their
+        // escaped form, so differently-escaped or differently-cased paths can't match the allow-list while
+        // the fetcher sends the caller's original URL.
+        private static bool IsSameUrl(Uri allowed, Uri requested) =>
+            Uri.Compare(allowed, requested, UriComponents.SchemeAndServer, UriFormat.UriEscaped, StringComparison.OrdinalIgnoreCase) == 0
+            && Uri.Compare(allowed, requested, UriComponents.PathAndQuery, UriFormat.UriEscaped, StringComparison.Ordinal) == 0;
 
         private Uri? Resolve(string? url)
         {
@@ -56,13 +65,25 @@ namespace Crumpled.AgentSpecs.Services
                 return absolute.Scheme is "http" or "https" ? absolute : null;
             }
 
-            var request = httpContextAccessor.HttpContext?.Request;
-            if (request is null || !Uri.TryCreate($"{request.Scheme}://{request.Host}", UriKind.Absolute, out var baseUri))
+            var baseUri = ResolveBaseUri();
+            return baseUri is not null && Uri.TryCreate(baseUri, url, out var resolved) ? resolved : null;
+        }
+
+        // Prefer the configured trusted origin; otherwise fall back to the backoffice request's own authority.
+        private Uri? ResolveBaseUri()
+        {
+            var configured = options.Value.BaseUrl;
+            if (!string.IsNullOrWhiteSpace(configured))
             {
-                return null;
+                return Uri.TryCreate(configured, UriKind.Absolute, out var baseUrl) && baseUrl.Scheme is "http" or "https"
+                    ? baseUrl
+                    : null;
             }
 
-            return Uri.TryCreate(baseUri, url, out var resolved) ? resolved : null;
+            var request = httpContextAccessor.HttpContext?.Request;
+            return request is not null && Uri.TryCreate($"{request.Scheme}://{request.Host}", UriKind.Absolute, out var requestBase)
+                ? requestBase
+                : null;
         }
     }
 }

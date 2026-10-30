@@ -1,5 +1,6 @@
 using Crumpled.AgentSpecs.Services;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Options;
 using NSubstitute;
 using Umbraco.Cms.Api.Management.Factories;
 using Umbraco.Cms.Api.Management.ViewModels.Document;
@@ -12,7 +13,10 @@ public class DocumentUrlValidatorTests
 {
     private static readonly Guid DocumentId = Guid.NewGuid();
 
-    private static DocumentUrlValidator Create(bool documentExists, params string[] documentUrls)
+    private static DocumentUrlValidator Create(bool documentExists, params string[] documentUrls) =>
+        CreateWithBaseUrl(documentExists, null, documentUrls);
+
+    private static DocumentUrlValidator CreateWithBaseUrl(bool documentExists, string? baseUrl, params string[] documentUrls)
     {
         var content = Substitute.For<IContent>();
         var contentService = Substitute.For<IContentService>();
@@ -27,7 +31,7 @@ public class DocumentUrlValidatorTests
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(context);
 
-        return new DocumentUrlValidator(contentService, factory, accessor);
+        return new DocumentUrlValidator(contentService, factory, accessor, Options.Create(new AgentSpecsOptions { BaseUrl = baseUrl }));
     }
 
     [Fact]
@@ -66,5 +70,26 @@ public class DocumentUrlValidatorTests
 
         Assert.Equal(DocumentUrlValidator.Outcome.UrlNotAllowed, outcome);
         Assert.Null(resolved);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ConfiguredBaseUrl_IsUsedInsteadOfTheRequestHost()
+    {
+        var (outcome, url) = await CreateWithBaseUrl(true, "https://www.example.com", "/about/").ValidateAsync(DocumentId, "/about/");
+
+        Assert.Equal(DocumentUrlValidator.Outcome.Valid, outcome);
+        Assert.Equal("https://www.example.com/about/", url!.ToString());
+    }
+
+    [Theory]
+    [InlineData("/ABOUT/")]
+    [InlineData("/about")]
+    [InlineData("/about/?x=1")]
+    [InlineData("/about%2F")]
+    public async Task ValidateAsync_PathOrQueryThatDiffersFromTheDocumentUrl_IsRejected(string requested)
+    {
+        var (outcome, _) = await Create(true, "/about/").ValidateAsync(DocumentId, requested);
+
+        Assert.Equal(DocumentUrlValidator.Outcome.UrlNotAllowed, outcome);
     }
 }

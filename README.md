@@ -21,6 +21,7 @@ No configuration is required. Optional settings:
   "Crumpled": {
     "AgentSpecs": {
       "UserAgent": "MyCompany-AgentSpecs/1.0",
+      "BaseUrl": "https://www.example.com",
       "TimeoutSeconds": 30,
       "MaxBodyBytes": 8388608
     }
@@ -31,6 +32,7 @@ No configuration is required. Optional settings:
 | Setting | Default | Description |
 |---|---|---|
 | `UserAgent` | `Crumpled.AgentSpecs/1.0` | The `User-Agent` sent with every request. Set this if your WAF or bot rules need to recognise (or allow-list) the request. |
+| `BaseUrl` | _(none)_ | The origin that root-relative document URLs (sites without a hostname set) are resolved against. When empty, the backoffice request's own scheme and host are used, which assumes the site only accepts trusted `Host` headers. Set this to pin a trusted origin. |
 | `TimeoutSeconds` | `30` | How long to wait for the page. |
 | `MaxBodyBytes` | `8388608` | The response is cut off (and flagged as truncated) beyond this size. |
 

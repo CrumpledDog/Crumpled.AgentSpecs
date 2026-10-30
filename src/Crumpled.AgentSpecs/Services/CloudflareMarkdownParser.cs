@@ -44,7 +44,8 @@ namespace Crumpled.AgentSpecs.Services
                 return new FrontmatterModel { Fields = fields };
             }
 
-            var block = text[4..end];
+            // An empty block ("---\n---") closes immediately, leaving nothing between the delimiters.
+            var block = end > 4 ? text[4..end] : string.Empty;
             foreach (var line in block.Split('\n'))
             {
                 var colon = line.IndexOf(':');
