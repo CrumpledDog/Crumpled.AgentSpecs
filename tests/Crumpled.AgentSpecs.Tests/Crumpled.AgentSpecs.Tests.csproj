@@ -23,4 +23,8 @@
     <ProjectReference Include="..\..\src\Crumpled.AgentSpecs\Crumpled.AgentSpecs.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures/**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
