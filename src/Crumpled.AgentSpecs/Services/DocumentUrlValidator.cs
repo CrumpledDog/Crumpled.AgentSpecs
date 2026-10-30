@@ -49,7 +49,9 @@ namespace Crumpled.AgentSpecs.Services
                 return null;
             }
 
-            if (Uri.TryCreate(url, UriKind.Absolute, out var absolute))
+            // On Linux, "/about/" parses as an absolute file:// URI, so root-relative paths are handled first.
+            var isRootRelative = url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal);
+            if (!isRootRelative && Uri.TryCreate(url, UriKind.Absolute, out var absolute))
             {
                 return absolute.Scheme is "http" or "https" ? absolute : null;
             }
