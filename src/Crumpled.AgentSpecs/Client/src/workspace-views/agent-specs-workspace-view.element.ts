@@ -285,7 +285,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
           </uui-tab>
           ${result.jsonLd.length
             ? html`<uui-tab label="JSON-LD" ?active=${this._tab === "jsonld"} @click=${() => (this._tab = "jsonld")}>
-                JSON-LD (${result.jsonLd.length})
+                JSON-LD${result.jsonLd.length > 1 ? ` (${result.jsonLd.length})` : ""}
               </uui-tab>`
             : nothing}
         </uui-tab-group>
