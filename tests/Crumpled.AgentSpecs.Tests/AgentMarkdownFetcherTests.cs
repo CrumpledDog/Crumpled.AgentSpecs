@@ -135,7 +135,7 @@ public class AgentMarkdownFetcherTests
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://internal.local/secret") } });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
             CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None));
         Assert.Single(handler.Requests);
     }
@@ -161,9 +161,38 @@ public class AgentMarkdownFetcherTests
     {
         var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(redirect) } });
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+        await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
             CreateFetcher(handler).FetchAsync(new Uri(requested), CancellationToken.None));
         Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/p", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=old", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=", "https://example.com/p?token=&token=secret", "https://example.com/p?token=&token=redacted")]
+    [InlineData("https://example.com/p?a=1", "https://example.com/p?a=1&t=secret", "https://example.com/p?a=1&t=redacted")]
+    [InlineData("https://example.com/p?a=1", "https://example.com/p?a=1", "https://example.com/p?a=1")]
+    public async Task FetchAsync_AnythingTheRequestAddedOrChangedInTheQuery_IsRedactedFromTheReportedUrls(string display, string request, string expectedFinal)
+    {
+        var handler = new StubHandler(_ => Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri(request), CancellationToken.None, new Uri(display));
+
+        Assert.Equal(display, result.RequestedUrl);
+        Assert.Equal(expectedFinal, result.FinalUrl);
+        Assert.Equal(request, Assert.Single(handler.Requests).RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task FetchAsync_RedirectToAnotherOriginWithTheToken_ExceptionMessageRedactsIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://other.example/x?token=secret") } });
+
+        var exception = await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri("https://example.com/p?token=secret"), CancellationToken.None, new Uri("https://example.com/p")));
+
+        Assert.DoesNotContain("secret", exception.Message);
     }
 
     [Fact]

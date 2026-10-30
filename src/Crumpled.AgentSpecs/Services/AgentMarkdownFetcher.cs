@@ -50,9 +50,16 @@ namespace Crumpled.AgentSpecs.Services
                 if ((int)response.StatusCode is >= 300 and < 400 && location is not null)
                 {
                     var next = location.IsAbsoluteUri ? location : new Uri(current, location);
-                    if (hop >= MaxRedirects || !IsAllowedRedirect(url, next))
+                    if (hop >= MaxRedirects)
                     {
-                        throw new InvalidOperationException($"Refused to follow a redirect to {next}. Only redirects within the requested origin (or an http to https upgrade) are followed (max {MaxRedirects}).");
+                        throw new AgentSpecsFetchException($"The page redirected more than {MaxRedirects} times.");
+                    }
+
+                    if (!IsAllowedRedirect(url, next))
+                    {
+                        // The destination is shown redacted: a redirect can carry the access token the request was sent with.
+                        throw new AgentSpecsFetchException(
+                            $"The page redirected to {RedactAddedQuery(next, url, displayUrl)}, which is outside the requested origin. Only redirects within it (or an http to https upgrade) are followed.");
                     }
 
                     current = next;
@@ -85,29 +92,58 @@ namespace Crumpled.AgentSpecs.Services
             }
         }
 
-        // URL processing may add query parameters to the request (an access token, say). They must not be reported
-        // back to the browser, so any parameter present on the request but not on the display URL is redacted.
-        private static string RedactAddedQuery(Uri final, Uri request, Uri display)
+        // URL processing may add to the request's query string (an access token, say), or change a parameter the
+        // listed URL already has. None of that may be reported back to the browser, so any name/value pair on the
+        // request that isn't on the display URL is redacted wherever it appears in the URL being reported.
+        private static string RedactAddedQuery(Uri reported, Uri request, Uri display)
         {
-            var added = QueryNames(request).Except(QueryNames(display), StringComparer.OrdinalIgnoreCase).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            if (added.Count == 0 || string.IsNullOrEmpty(final.Query))
+            if (string.IsNullOrEmpty(reported.Query))
             {
-                return final.ToString();
+                return reported.ToString();
             }
 
-            var parts = final.Query.TrimStart('?').Split('&').Select(part =>
+            var unmatchedDisplayPairs = QueryPairs(display).ToList();
+            var secretPairs = new HashSet<(string Name, string Value)>();
+            foreach (var pair in QueryPairs(request))
+            {
+                var match = unmatchedDisplayPairs.FindIndex(candidate => PairsEqual(candidate, pair));
+                if (match >= 0)
+                {
+                    unmatchedDisplayPairs.RemoveAt(match);
+                }
+                else
+                {
+                    secretPairs.Add((pair.Name.ToLowerInvariant(), pair.Value));
+                }
+            }
+
+            if (secretPairs.Count == 0)
+            {
+                return reported.ToString();
+            }
+
+            var parts = reported.Query.TrimStart('?').Split('&').Select(part =>
             {
                 var separator = part.IndexOf('=');
-                var name = Uri.UnescapeDataString(separator < 0 ? part : part[..separator]);
-                return added.Contains(name) ? $"{(separator < 0 ? part : part[..separator])}=redacted" : part;
+                var rawName = separator < 0 ? part : part[..separator];
+                var value = separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]);
+                return secretPairs.Contains((Uri.UnescapeDataString(rawName).ToLowerInvariant(), value)) ? $"{rawName}=redacted" : part;
             });
 
-            return new UriBuilder(final) { Query = string.Join("&", parts) }.Uri.ToString();
+            return new UriBuilder(reported) { Query = string.Join("&", parts) }.Uri.ToString();
         }
 
-        private static IEnumerable<string> QueryNames(Uri uri) =>
-            uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries)
-                .Select(part => Uri.UnescapeDataString(part.Contains('=') ? part[..part.IndexOf('=')] : part));
+        private static bool PairsEqual((string Name, string Value) a, (string Name, string Value) b) =>
+            string.Equals(a.Name, b.Name, StringComparison.OrdinalIgnoreCase) && string.Equals(a.Value, b.Value, StringComparison.Ordinal);
+
+        private static IEnumerable<(string Name, string Value)> QueryPairs(Uri uri) =>
+            uri.Query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries).Select(part =>
+            {
+                var separator = part.IndexOf('=');
+                return (
+                    Uri.UnescapeDataString(separator < 0 ? part : part[..separator]),
+                    separator < 0 ? string.Empty : Uri.UnescapeDataString(part[(separator + 1)..]));
+            });
 
         // The validated URL's origin is the only trust boundary: same host, same effective port, same scheme.
         // The one exception is the common http -> https upgrade on the default ports.

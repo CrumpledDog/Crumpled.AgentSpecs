@@ -6,6 +6,7 @@ using Crumpled.AgentSpecs.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using Umbraco.Cms.Core.Services;
@@ -68,7 +69,8 @@ public class CrumpledAgentSpecsApiControllerTests
             targetService,
             new DocumentUrlValidator(targetService, accessor, options),
             new AgentMarkdownFetcher(clients, options),
-            authorization)
+            authorization,
+            NullLogger<CrumpledAgentSpecsApiController>.Instance)
         {
             ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() },
         };
@@ -124,6 +126,56 @@ public class CrumpledAgentSpecsApiControllerTests
         Assert.Equal(PageUrl, model.RequestedUrl);
         Assert.Equal("https://www.example.com/?UMB_AUTH_TOKEN=redacted", model.FinalUrl);
         Assert.DoesNotContain("secret", model.RequestedUrl + model.FinalUrl);
+    }
+
+    private static IAgentSpecsUrlProcessor TokenProcessor() =>
+        new FakeUrlProcessor(urls => urls.Select(url => new AgentSpecsUrlTarget(url, url + "?UMB_AUTH_TOKEN=secret")).ToList());
+
+    private static string DetailOf(IActionResult result) =>
+        Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value).Detail ?? string.Empty;
+
+    [Fact]
+    public async Task GetMarkdown_RedirectToAnotherOriginCarryingTheToken_ErrorDetailDoesNotExposeIt()
+    {
+        var (controller, _, _) = Create(
+            authorized: true,
+            _ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://www.example.com:8443/next?UMB_AUTH_TOKEN=secret") } },
+            TokenProcessor());
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.DoesNotContain("secret", DetailOf(result));
+        Assert.Contains("redacted", DetailOf(result));
+    }
+
+    [Fact]
+    public async Task GetMarkdown_RedirectLoopThatKeepsTheToken_ErrorDetailDoesNotExposeIt()
+    {
+        var (controller, _, _) = Create(
+            authorized: true,
+            request => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = request.RequestUri } },
+            TokenProcessor());
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.DoesNotContain("secret", DetailOf(result));
+    }
+
+    [Fact]
+    public async Task GetMarkdown_FrameworkExceptionMessage_IsNotReturned()
+    {
+        var (controller, _, _) = Create(
+            authorized: true,
+            request => throw new HttpRequestException($"Connection failed for {request.RequestUri}"),
+            TokenProcessor());
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsType<ObjectResult>(result).StatusCode);
+        Assert.DoesNotContain("secret", DetailOf(result));
+        Assert.DoesNotContain("Connection failed", DetailOf(result));
     }
 
     [Fact]
