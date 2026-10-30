@@ -59,7 +59,7 @@ namespace Crumpled.AgentSpecs.Services
                     {
                         // The destination is shown redacted: a redirect can carry the access token the request was sent with.
                         throw new AgentSpecsFetchException(
-                            $"The page redirected to {RedactAddedQuery(next, url, displayUrl)}, which is outside the requested origin. Only redirects within it (or an http to https upgrade) are followed.");
+                            $"The page redirected to {RedactSecrets(next, url, displayUrl)}, which is outside the requested origin. Only redirects within it (or an http to https upgrade) are followed.");
                     }
 
                     current = next;
@@ -76,7 +76,7 @@ namespace Crumpled.AgentSpecs.Services
                 return new AgentSpecsResponseModel
                 {
                     RequestedUrl = displayUrl.ToString(),
-                    FinalUrl = RedactAddedQuery(current, url, displayUrl),
+                    FinalUrl = RedactSecrets(current, url, displayUrl),
                     StatusCode = (int)response.StatusCode,
                     ContentType = response.Content.Headers.ContentType?.ToString(),
                     IsMarkdown = isMarkdown,
@@ -93,16 +93,12 @@ namespace Crumpled.AgentSpecs.Services
         }
 
         // URL processing may add to the request's query string (an access token, say), or change a parameter the
-        // listed URL already has. None of that may be reported back to the browser. A redirect can also carry the
-        // token on, re-encoded or nested inside another parameter (for example ReturnUrl=%2Fpage%3Ftoken%3Dsecret),
-        // so the reported query is redacted by value, in any encoding, not just by exact name/value match.
-        private static string RedactAddedQuery(Uri reported, Uri request, Uri display)
+        // listed URL already has. None of that may be reported back to the browser, and a redirect can carry it on
+        // anywhere in the URL: re-encoded, nested inside another parameter (ReturnUrl=%2Fpage%3Ftoken%3Dsecret), as a
+        // path segment (/login/secret) or in the fragment (/login#token=secret). So the reported URL is rebuilt with
+        // every part that is, or contains, a secret redacted. It is only ever shown, never requested.
+        private static string RedactSecrets(Uri reported, Uri request, Uri display)
         {
-            if (string.IsNullOrEmpty(reported.Query))
-            {
-                return reported.ToString();
-            }
-
             var displayPairs = QueryPairs(display).ToHashSet();
             var secretPairs = QueryPairs(request).Where(pair => !displayPairs.Contains(pair)).ToHashSet();
             if (secretPairs.Count == 0)
@@ -112,21 +108,38 @@ namespace Crumpled.AgentSpecs.Services
 
             var secretValues = secretPairs.Select(pair => pair.Value).Where(value => value.Length > 0).Distinct().ToList();
 
-            var parts = reported.Query.TrimStart('?').Split('&').Select(part =>
+            // The authority is rebuilt without user info, which has no business being shown.
+            var result = new StringBuilder($"{reported.Scheme}://{reported.Authority}");
+
+            var displaySegments = display.AbsolutePath.Split('/').Select(FormDecode).ToHashSet();
+            result.Append(string.Join("/", reported.AbsolutePath.Split('/').Select(segment =>
+                !displaySegments.Contains(FormDecode(segment)) && ContainsAny(segment, secretValues) ? "redacted" : segment)));
+
+            if (!string.IsNullOrEmpty(reported.Query))
             {
-                var separator = part.IndexOf('=');
-                var rawName = separator < 0 ? part : part[..separator];
-                var rawValue = separator < 0 ? string.Empty : part[(separator + 1)..];
-                var pair = (FormDecode(rawName).ToLowerInvariant(), FormDecode(rawValue));
+                var parts = reported.Query.TrimStart('?').Split('&').Select(part =>
+                {
+                    var separator = part.IndexOf('=');
+                    var rawName = separator < 0 ? part : part[..separator];
+                    var rawValue = separator < 0 ? string.Empty : part[(separator + 1)..];
+                    var pair = (FormDecode(rawName).ToLowerInvariant(), FormDecode(rawValue));
 
-                // A parameter the listed URL legitimately has is kept. Anything else is redacted if it is a secret the
-                // request added, or if it contains one (nested, or in another encoding).
-                var redact = secretPairs.Contains(pair)
-                    || (!displayPairs.Contains(pair) && ContainsAny(rawValue, secretValues));
-                return redact ? $"{rawName}=redacted" : part;
-            });
+                    // A parameter the listed URL legitimately has is kept. Anything else is redacted if it is a secret the
+                    // request added, or if it contains one.
+                    var redact = secretPairs.Contains(pair)
+                        || (!displayPairs.Contains(pair) && ContainsAny(rawValue, secretValues));
+                    return redact ? $"{rawName}=redacted" : part;
+                });
+                result.Append('?').Append(string.Join("&", parts));
+            }
 
-            return new UriBuilder(reported) { Query = string.Join("&", parts) }.Uri.ToString();
+            var fragment = reported.Fragment.TrimStart('#');
+            if (fragment.Length > 0)
+            {
+                result.Append('#').Append(ContainsAny(fragment, secretValues) ? "redacted" : fragment);
+            }
+
+            return result.ToString();
         }
 
         // Query strings are form-encoded, so '+' means a space. Decoding names and values the same way on both
