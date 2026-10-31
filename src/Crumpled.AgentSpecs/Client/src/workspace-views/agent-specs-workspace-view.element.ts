@@ -19,6 +19,9 @@ import { UmbRequestReloadStructureForEntityEvent } from "@umbraco-cms/backoffice
 import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown, getUrls } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
+import "./agent-specs-guide.element.js";
+import { parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
+import type { SignalState } from "./agent-specs-guide.js";
 
 type DocumentLink = { culture: string | null; url: string };
 type ViewTab = "preview" | "markdown" | "jsonld";
@@ -40,6 +43,23 @@ function readMinimapPreference(): boolean {
   }
 }
 
+const GUIDE_PREFERENCE_KEY = "crumpled-agent-specs:guide";
+
+// Shown by default; experts can hide it and the choice is remembered per viewer (storage failures are ignored).
+function readGuidePreference(): boolean {
+  try {
+    return localStorage.getItem(GUIDE_PREFERENCE_KEY) !== "0";
+  } catch {
+    return true;
+  }
+}
+
+const SIGNAL_LABELS: Record<SignalState, string> = {
+  allowed: "allowed",
+  declined: "not allowed",
+  unspecified: "not stated",
+};
+
 @customElement("crumpled-agent-specs-workspace-view")
 export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _links: Array<DocumentLink> = [];
@@ -51,6 +71,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _tab: ViewTab = "preview";
   @state() private _minimap = readMinimapPreference();
   @state() private _jsonExpanded = true;
+  @state() private _showGuide = readGuidePreference();
 
   #unique?: string;
   #entityType?: string;
@@ -225,6 +246,15 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     codeEditor?.editor?.updateOptions({ minimap: this._minimap });
   }
 
+  #toggleGuide() {
+    this._showGuide = !this._showGuide;
+    try {
+      localStorage.setItem(GUIDE_PREFERENCE_KEY, this._showGuide ? "1" : "0");
+    } catch {
+      // A remembered preference is a convenience only; storage can be unavailable.
+    }
+  }
+
   // json-viewer renders collapsed. Open (or close) every block once it has rendered its data, and again whenever
   // the editor toggles it, a new response arrives or the tab is shown.
   override updated(changed: PropertyValues) {
@@ -244,7 +274,12 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   override render() {
     return html`
       <umb-body-layout header-fit-height>
-        ${this.#renderRequestBox()} ${this.#renderResult()}
+        <div class="layout ${this._showGuide ? "with-guide" : ""}">
+          <div class="main">${this.#renderRequestBox()} ${this.#renderResult()}</div>
+          ${this._showGuide
+            ? html`<crumpled-agent-specs-guide .result=${this._result} .tab=${this._tab}></crumpled-agent-specs-guide>`
+            : nothing}
+        </div>
       </umb-body-layout>
     `;
   }
@@ -261,8 +296,21 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     }
 
     return html`
-      <uui-box headline="Agent Specs">
+      <uui-box headline="See this page through the eyes of an AI agent">
+        <uui-button
+          slot="header-actions"
+          compact
+          look="secondary"
+          label=${this._showGuide ? "Hide guide" : "Show guide"}
+          @click=${this.#toggleGuide}
+        >
+          <uui-icon name="icon-help-alt"></uui-icon> ${this._showGuide ? "Hide guide" : "Show guide"}
+        </uui-button>
         <p class="muted">
+          Discover what AI assistants, search bots and agents receive when they visit this page. It is often very
+          different from what people see.
+        </p>
+        <p class="muted small">
           Requests the published page with <code>Accept: text/markdown</code>, the way an agent would. The site
           needs to answer with markdown, for example with Cloudflare Markdown for Agents.
         </p>
@@ -318,6 +366,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         <p class="muted small">
           ${result.finalUrl} &middot; User-Agent: <code>${result.userAgent}</code>
         </p>
+        ${this.#renderPlainSummary(result)}
         ${!result.isMarkdown
           ? html`<uui-tag color="warning" class="error">
               <uui-icon name="icon-alert"></uui-icon>
@@ -346,6 +395,38 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         ${this._tab === "jsonld" ? this.#renderJsonLd(result) : nothing}
       </uui-box>
     `;
+  }
+
+  // The tags above are exact but terse; this says the same things in plain words for editors new to the subject.
+  #renderPlainSummary(result: AgentSpecsResponseModel) {
+    const signals = parseContentSignal(result.headers["content-signal"]);
+    const types = schemaTypes(result.jsonLd.map((item) => item.raw));
+    const size = `${(result.raw.length / 1024).toFixed(1)} KB`;
+
+    const line = (icon: string, color: "positive" | "warning", content: unknown) =>
+      html`<li><uui-icon name=${icon} style="color: var(--uui-color-${color}-standalone)"></uui-icon> ${content}</li>`;
+
+    return html`<ul class="plain-summary">
+      ${result.statusCode >= 400
+        ? line("icon-alert", "warning", `The page returned an error (${result.statusCode}), so agents get no content.`)
+        : result.isMarkdown
+          ? line("icon-check", "positive", `Agents receive a clean text version of this page (${size}).`)
+          : line("icon-alert", "warning", "Agents receive the page as raw HTML, which is harder for them to read.")}
+      ${signals
+        ? line(
+            "icon-check",
+            "positive",
+            `AI training: ${SIGNAL_LABELS[signals.aiTrain]} · Search results: ${SIGNAL_LABELS[signals.search]} · AI answers (live use): ${SIGNAL_LABELS[signals.aiInput]}`,
+          )
+        : line("icon-alert", "warning", "No content preferences are declared for AI use.")}
+      ${result.jsonLd.length
+        ? line(
+            "icon-check",
+            "positive",
+            `${result.jsonLd.length} structured data ${result.jsonLd.length === 1 ? "block" : "blocks"} found${types.length ? ` (${types.join(", ")})` : ""}.`,
+          )
+        : line("icon-alert", "warning", "No structured data (JSON-LD) found on this page.")}
+    </ul>`;
   }
 
   #renderPreview(result: AgentSpecsResponseModel) {
@@ -450,10 +531,37 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       :host {
         display: block;
         padding: var(--uui-size-layout-1);
+        container-type: inline-size;
+      }
+
+      /* Same two-column arrangement as the document Info view: content on the left, a 350px column on the right. */
+      .layout {
+        display: grid;
+        gap: var(--uui-size-layout-1);
+        grid-template-columns: 1fr;
+      }
+
+      .layout.with-guide {
+        grid-template-columns: minmax(0, 1fr) 350px;
+      }
+
+      @container (max-width: 900px) {
+        .layout.with-guide {
+          grid-template-columns: minmax(0, 1fr);
+        }
       }
 
       uui-box {
         margin-bottom: var(--uui-size-layout-1);
+      }
+
+      .plain-summary {
+        list-style: none;
+        margin: var(--uui-size-space-4) 0 0;
+        padding: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--uui-size-space-2);
       }
 
       .muted {
