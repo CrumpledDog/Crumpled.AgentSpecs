@@ -49,7 +49,8 @@ public class CrumpledAgentSpecsApiControllerTests
         bool authorized,
         Func<HttpRequestMessage, HttpResponseMessage>? respond = null,
         IAgentSpecsUrlProcessor? processor = null,
-        bool documentExists = true)
+        bool documentExists = true,
+        bool umbracoCloud = false)
     {
         var handler = new StubHandler(respond ?? (_ => new HttpResponseMessage(HttpStatusCode.OK)));
         var clients = Substitute.For<IHttpClientFactory>();
@@ -69,6 +70,7 @@ public class CrumpledAgentSpecsApiControllerTests
             targetService,
             new DocumentUrlValidator(targetService, accessor, options),
             new AgentMarkdownFetcher(clients, options),
+            UmbracoCloudDetectorTests.CreateDetector(umbracoCloud),
             authorization,
             NullLogger<CrumpledAgentSpecsApiController>.Instance)
         {
@@ -100,6 +102,19 @@ public class CrumpledAgentSpecsApiControllerTests
 
         Assert.IsType<OkObjectResult>(result);
         Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task GetMarkdown_ReportsWhetherTheSiteIsOnUmbracoCloud(bool umbracoCloud)
+    {
+        var (controller, _, _) = Create(authorized: true, umbracoCloud: umbracoCloud);
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        var model = Assert.IsType<AgentSpecsResponseModel>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Equal(umbracoCloud, model.IsUmbracoCloud);
     }
 
     [Fact]
