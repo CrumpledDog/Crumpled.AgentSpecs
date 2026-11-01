@@ -70,10 +70,9 @@ export class CrumpledAgentSpecsGuideElement extends UmbLitElement {
           </p>
           ${result && !result.isMarkdown
             ? html`<p>
-                <strong>This page answered with HTML.</strong> Agents can still read it, but with more noise. If the
-                site is on Cloudflare, switch on <em>Markdown for Agents</em>. Otherwise, ask your developers to
-                answer <code>Accept: text/markdown</code> requests, either in the site itself or at the CDN or
-                hosting layer.
+                <strong>This page answered with HTML.</strong> Agents can still read it, but with more noise. See
+                <em>What can I do?</em> in the results for the quickest routes. In every case the site, or the CDN
+                or hosting in front of it, has to answer <code>Accept: text/markdown</code> requests with markdown.
               </p>`
             : nothing}
           <p>
@@ -98,8 +97,13 @@ export class CrumpledAgentSpecsGuideElement extends UmbLitElement {
           </ul>
           <p>
             <em>yes</em> means allowed and <em>no</em> means not allowed. These are published preferences, not
-            enforcement. Well-behaved crawlers respect them. If you're not on Cloudflare the header is optional;
-            your developers can set it in the server or CDN configuration and mirror it in robots.txt.
+            enforcement. Well-behaved crawlers respect them. The header is optional. Whoever looks after the site's
+            technical setup can set it in the server or CDN configuration and mirror it in robots.txt.
+          </p>
+          <p>
+            <strong>Cloudflare fills in a default.</strong> With Markdown for Agents switched on, if the site doesn't
+            send its own header, Cloudflare adds <code>ai-train=yes, search=yes, ai-input=yes</code>. So a signal
+            you see here may be that default rather than a deliberate choice. Set your own to be explicit.
           </p>
           ${result && !result.headers["content-signal"]
             ? html`<p>

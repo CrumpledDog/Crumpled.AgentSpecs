@@ -20,7 +20,7 @@ import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown, getUrls } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
 import "./agent-specs-guide.element.js";
-import { parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
+import { HELP_NOT_SURE, HELP_OPTIONS, REPORT_FOOTER, parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
 import type { SignalState } from "./agent-specs-guide.js";
 
 type DocumentLink = { culture: string | null; url: string };
@@ -457,11 +457,35 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     }
 
     return html`<div class="cta">
-      <strong>Agents can't get a clean version of this page yet.</strong>
-      <p>
-        Your developers can make this page easier for AI agents to read. Share this report with them, and they can
-        work out the best way to do it for this site.
-      </p>
+      <strong>Agents can't get a clean version of this page yet. What can I do?</strong>
+      ${HELP_OPTIONS.map(
+        (option) => html`<div class="option">
+          <h4>${option.title}</h4>
+          <p>${option.text}</p>
+          ${option.id === "cloudflare"
+            ? html`<img
+                class="screenshot"
+                src="/App_Plugins/CrumpledAgentSpecs/cloudflare-markdown-for-agents.png"
+                alt="The Markdown for Agents switch in the Cloudflare dashboard"
+              />`
+            : nothing}
+          <div class="links">
+            ${option.links.map(
+              (link) => html`<uui-button
+                compact
+                look="secondary"
+                label=${link.label}
+                href=${link.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <uui-icon name="icon-out"></uui-icon> ${link.label}
+              </uui-button>`,
+            )}
+          </div>
+        </div>`,
+      )}
+      <p>${HELP_NOT_SURE}</p>
       <uui-button
         look="secondary"
         label=${this._reportCopied ? "Copied" : "Copy summary for developers"}
@@ -480,9 +504,16 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       "",
       ...this.#findings(result).map((finding) => `- ${finding.text}`),
       "",
-      "Requests for this page with Accept: text/markdown are not answered with markdown. Could you advise on serving " +
-        "markdown to agents, either in the site itself or at the CDN or hosting layer (for example Cloudflare " +
-        "Markdown for Agents)?",
+      "Requests for this page with Accept: text/markdown are not answered with markdown, so AI agents receive the " +
+        "raw HTML instead. What can be done:",
+      "",
+      ...HELP_OPTIONS.flatMap((option) => [
+        `${option.title}`,
+        option.text,
+        ...option.links.map((link) => `${link.label}: ${link.href}`),
+        "",
+      ]),
+      REPORT_FOOTER,
     ].join("\n");
     this.#copy(report);
 
@@ -632,6 +663,29 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
 
       .cta p:last-child {
         margin-bottom: 0;
+      }
+
+      .cta .option {
+        margin-top: var(--uui-size-space-4);
+      }
+
+      .cta h4 {
+        margin: 0;
+      }
+
+      .cta .screenshot {
+        display: block;
+        max-width: 100%;
+        width: 400px;
+        margin: 0 0 var(--uui-size-space-3);
+        border: 1px solid var(--uui-color-border);
+        border-radius: var(--uui-border-radius);
+      }
+
+      .cta .links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--uui-size-space-2);
       }
 
       .plain-summary {
