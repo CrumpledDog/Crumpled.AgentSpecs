@@ -77,8 +77,9 @@ export const HELP_OPTIONS: Array<HelpOption> = [
     id: "umbraco-cloud",
     title: "Your site is on Umbraco Cloud",
     text:
-      "Umbraco Cloud uses Cloudflare, but Markdown for Agents isn't available unless your hostname is managed " +
-      "through your own Cloudflare account. Or you could install the community package AI Visibility for Umbraco.",
+      "Markdown for Agents isn't available on Umbraco Cloud itself. To use it, you need to put your hostname " +
+      "through your own Cloudflare account, on a plan that supports it. Or you could install the community " +
+      "package AI Visibility for Umbraco.",
     links: [
       { label: "Umbraco Cloud: your own Cloudflare account", href: GUIDE_LINKS.umbracoCloudCloudflare },
       { label: "AI Visibility for Umbraco", href: GUIDE_LINKS.aiVisibilityPackage },
