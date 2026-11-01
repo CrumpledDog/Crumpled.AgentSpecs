@@ -15,6 +15,7 @@ import { marked } from "@umbraco-cms/backoffice/external/marked";
 import { UmbLitElement } from "@umbraco-cms/backoffice/lit-element";
 import { UMB_DOCUMENT_WORKSPACE_CONTEXT } from "@umbraco-cms/backoffice/document";
 import { UMB_ACTION_EVENT_CONTEXT } from "@umbraco-cms/backoffice/action";
+import { UMB_NOTIFICATION_CONTEXT } from "@umbraco-cms/backoffice/notification";
 import { UmbRequestReloadStructureForEntityEvent } from "@umbraco-cms/backoffice/entity-action";
 import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown, getUrls } from "../api/index.js";
@@ -227,8 +228,14 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     }
   }
 
-  #copy(text: string) {
-    navigator.clipboard?.writeText(text);
+  async #copy(text: string) {
+    const notifications = await this.getContext(UMB_NOTIFICATION_CONTEXT);
+    try {
+      await navigator.clipboard.writeText(text);
+      notifications?.peek("positive", { data: { headline: "Copied", message: "Copied to clipboard" } });
+    } catch {
+      notifications?.peek("danger", { data: { headline: "Copy failed", message: "Could not copy to clipboard" } });
+    }
   }
 
   #toggleMinimap() {
