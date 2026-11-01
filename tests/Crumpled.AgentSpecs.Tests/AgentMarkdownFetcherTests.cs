@@ -140,6 +140,37 @@ public class AgentMarkdownFetcherTests
         Assert.All(result.JsonLd, item => Assert.Null(item.Error));
     }
 
+    [Theory]
+    [InlineData("<!-- <script type=\"application/ld+json\">{ \"@type\": \"Old\" }</script> -->")]
+    [InlineData("<script data-type=\"application/ld+json\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"application/ld+json-other\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"text/javascript\">var s = '<script type=\"application/ld+json\">{}';</script>")]
+    public async Task FetchAsync_HtmlResponse_OnlyRealJsonLdScriptsAreReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_QuotedAttributesContainingAngleBracketsAreHandled()
+    {
+        const string html = """
+            <script data-note="1 > 0" type="application/ld+json" data-after='a > b'>{ "@type": "Before" }</script>
+            <script type="application/ld+json" data-note="1 > 0">{ "@type": "After" }</script>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("Before", result.JsonLd[0].Raw);
+        Assert.Contains("After", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
     [Fact]
     public async Task FetchAsync_HtmlResponse_InvalidJsonLdIsKeptWithAnError()
     {
