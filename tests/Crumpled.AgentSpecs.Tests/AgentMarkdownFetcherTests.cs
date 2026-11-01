@@ -154,6 +154,44 @@ public class AgentMarkdownFetcherTests
         Assert.Empty(result.JsonLd);
     }
 
+    [Theory]
+    [InlineData("<div data-example='<script type=\"application/ld+json\">{\"@type\":\"Example\"}</script>'></div>")]
+    [InlineData("<style>/* <script type=\"application/ld+json\">{\"@type\":\"X\"}</script> */</style>")]
+    [InlineData("<textarea><script type=\"application/ld+json\">{\"@type\":\"X\"}</script></textarea>")]
+    public async Task FetchAsync_HtmlResponse_ScriptShapedTextInOtherElementsIsNotReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_ClosingTagLookalikeInsideTheJsonIsPartOfTheJson()
+    {
+        const string html = "<script type=\"application/ld+json\">{\"@type\":\"Thing\",\"name\":\"</scripture>\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+        Assert.Contains("</scripture>", item.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_EncodedTypeAttributeIsDecoded()
+    {
+        const string html = "<script type=\"application/ld&#43;json\">{\"@type\":\"Thing\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+    }
+
     [Fact]
     public async Task FetchAsync_HtmlResponse_QuotedAttributesContainingAngleBracketsAreHandled()
     {

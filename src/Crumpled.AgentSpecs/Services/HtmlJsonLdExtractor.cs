@@ -1,3 +1,4 @@
+using System.Net;
 using Crumpled.AgentSpecs.Models;
 
 namespace Crumpled.AgentSpecs.Services
@@ -8,11 +9,15 @@ namespace Crumpled.AgentSpecs.Services
     /// </summary>
     /// <remarks>
     /// A small tokenizer rather than a pattern: it skips comments, reads quoted attribute values (which may contain
-    /// <c>&gt;</c>), compares the type attribute exactly, and takes a script's content as raw text up to its closing tag.
+    /// <c>&gt;</c>), compares the (decoded) type attribute exactly, and reads script, style and similar content as raw text up
+    /// to the matching closing tag.
     /// </remarks>
     public static class HtmlJsonLdExtractor
     {
         private const string JsonLdType = "application/ld+json";
+
+        // Elements whose content is text, not markup: anything that looks like a tag inside them is not one.
+        private static readonly string[] RawTextElements = ["script", "style", "textarea", "title", "xmp", "iframe", "noembed", "noframes"];
 
         public static IReadOnlyList<JsonLdModel> Extract(string html)
         {
@@ -34,43 +39,69 @@ namespace Crumpled.AgentSpecs.Services
                     continue;
                 }
 
-                if (!IsScriptStart(html, open))
+                var nameStart = open + 1;
+                if (nameStart >= html.Length || !char.IsAsciiLetter(html[nameStart]))
                 {
-                    position = open + 1;
+                    position = nameStart;
                     continue;
                 }
 
-                var type = ReadTag(html, open + "<script".Length, out var contentStart);
-                var close = html.IndexOf("</script", contentStart, StringComparison.OrdinalIgnoreCase);
-                var contentEnd = close < 0 ? html.Length : close;
-
-                if (string.Equals(type?.Trim(), JsonLdType, StringComparison.OrdinalIgnoreCase))
+                var nameEnd = nameStart;
+                while (nameEnd < html.Length && !char.IsWhiteSpace(html[nameEnd]) && html[nameEnd] is not ('>' or '/'))
                 {
-                    var json = html[contentStart..contentEnd].Trim();
+                    nameEnd++;
+                }
+
+                // Consume the whole start tag, so quoted attribute values are never scanned as markup.
+                var name = html[nameStart..nameEnd].ToLowerInvariant();
+                var type = ReadTag(html, nameEnd, out var contentStart);
+
+                if (!RawTextElements.Contains(name))
+                {
+                    position = contentStart;
+                    continue;
+                }
+
+                var close = FindClosingTag(html, name, contentStart);
+                if (name == "script" && string.Equals(WebUtility.HtmlDecode(type ?? string.Empty).Trim(), JsonLdType, StringComparison.OrdinalIgnoreCase))
+                {
+                    var json = html[contentStart..close].Trim();
                     if (json.Length > 0)
                     {
                         items.AddRange(CloudflareMarkdownParser.SplitJsonValues(json));
                     }
                 }
 
-                // Whatever is inside a script is not markup, so carry on after its closing tag.
-                var closeEnd = close < 0 ? -1 : html.IndexOf('>', close);
+                // The content is not markup, so carry on after the closing tag.
+                var closeEnd = close >= html.Length ? -1 : html.IndexOf('>', close);
                 position = closeEnd < 0 ? html.Length : closeEnd + 1;
             }
 
             return items;
         }
 
-        private static bool IsScriptStart(string html, int open)
+        // The index of the end tag for name (the whole name, not a longer one such as </scripture>), or the end of the html.
+        private static int FindClosingTag(string html, string name, int from)
         {
-            const string tag = "<script";
-            if (string.Compare(html, open, tag, 0, tag.Length, StringComparison.OrdinalIgnoreCase) != 0)
+            var search = from;
+            while (search < html.Length)
             {
-                return false;
+                var close = html.IndexOf("</" + name, search, StringComparison.OrdinalIgnoreCase);
+                if (close < 0)
+                {
+                    return html.Length;
+                }
+
+                var after = close + 2 + name.Length;
+                if (after >= html.Length || char.IsWhiteSpace(html[after]) || html[after] is '>' or '/')
+                {
+                    return close;
+                }
+
+                search = after;
             }
 
-            var next = open + tag.Length;
-            return next < html.Length && (char.IsWhiteSpace(html[next]) || html[next] == '>' || html[next] == '/');
+            return html.Length;
         }
 
         // Reads the attributes of a start tag and returns the value of its type attribute (null if it has none).
