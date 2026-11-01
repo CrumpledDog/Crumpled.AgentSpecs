@@ -138,8 +138,9 @@ export function helpFor(hosting: { isUmbracoCloud: boolean; isCloudflare: boolea
         id: "ai-visibility",
         title: "Install AI Visibility for Umbraco",
         text:
-          "This site isn't behind Cloudflare or on Umbraco Cloud, so nothing in front of it can create a markdown " +
-          "version. The community package AI Visibility for Umbraco makes the site answer agents with one.",
+          "This page didn't come back as markdown, and we didn't detect Cloudflare or Umbraco Cloud in front of the " +
+          "site. One option is the community package AI Visibility for Umbraco, which makes the site answer agents " +
+          "with a markdown version of each page.",
         links: [AI_VISIBILITY_LINK],
       },
     ],
