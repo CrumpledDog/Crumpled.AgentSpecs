@@ -87,7 +87,7 @@ namespace Crumpled.AgentSpecs.Services
                     Raw = body,
                     Frontmatter = parsed.Frontmatter,
                     Markdown = isMarkdown ? parsed.Markdown : string.Empty,
-                    JsonLd = isMarkdown ? parsed.JsonLd : [],
+                    JsonLd = isMarkdown ? parsed.JsonLd : HtmlJsonLdExtractor.Extract(body),
                 };
             }
         }

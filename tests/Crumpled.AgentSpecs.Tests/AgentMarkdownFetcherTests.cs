@@ -118,6 +118,40 @@ public class AgentMarkdownFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_HtmlResponse_StillReportsJsonLdFromScriptTags()
+    {
+        const string html = """
+            <html><head>
+            <script type="application/ld+json">{ "@type": "WebSite", "name": "A" }</script>
+            <script async src="/x.js"></script>
+            <SCRIPT TYPE='application/ld+json' id="org">
+              { "@type": "Organization" }
+            </SCRIPT>
+            </head><body></body></html>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.False(result.IsMarkdown);
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("WebSite", result.JsonLd[0].Raw);
+        Assert.Contains("Organization", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_InvalidJsonLdIsKeptWithAnError()
+    {
+        var handler = new StubHandler(_ => Markdown("<script type=\"application/ld+json\">{ nope</script>", "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
     public async Task FetchAsync_SameHostRedirect_IsFollowed()
     {
         var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/old"
