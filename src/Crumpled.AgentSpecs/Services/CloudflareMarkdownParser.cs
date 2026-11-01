@@ -107,7 +107,7 @@ namespace Crumpled.AgentSpecs.Services
             return SplitJsonValues(json);
         }
 
-        private static IReadOnlyList<JsonLdModel> SplitJsonValues(string json)
+        internal static IReadOnlyList<JsonLdModel> SplitJsonValues(string json)
         {
             var items = new List<JsonLdModel>();
             var reader = new Utf8JsonReader(

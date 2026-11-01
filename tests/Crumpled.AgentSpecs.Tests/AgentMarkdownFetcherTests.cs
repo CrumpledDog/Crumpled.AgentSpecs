@@ -118,6 +118,135 @@ public class AgentMarkdownFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_HtmlResponse_StillReportsJsonLdFromScriptTags()
+    {
+        const string html = """
+            <html><head>
+            <script type="application/ld+json">{ "@type": "WebSite", "name": "A" }</script>
+            <script async src="/x.js"></script>
+            <SCRIPT TYPE='application/ld+json' id="org">
+              { "@type": "Organization" }
+            </SCRIPT>
+            </head><body></body></html>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.False(result.IsMarkdown);
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("WebSite", result.JsonLd[0].Raw);
+        Assert.Contains("Organization", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
+    [Theory]
+    [InlineData("<!-- <script type=\"application/ld+json\">{ \"@type\": \"Old\" }</script> -->")]
+    [InlineData("<script data-type=\"application/ld+json\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"application/ld+json-other\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"text/javascript\">var s = '<script type=\"application/ld+json\">{}';</script>")]
+    public async Task FetchAsync_HtmlResponse_OnlyRealJsonLdScriptsAreReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Theory]
+    [InlineData("<div data-example='<script type=\"application/ld+json\">{\"@type\":\"Example\"}</script>'></div>")]
+    [InlineData("<style>/* <script type=\"application/ld+json\">{\"@type\":\"X\"}</script> */</style>")]
+    [InlineData("<textarea><script type=\"application/ld+json\">{\"@type\":\"X\"}</script></textarea>")]
+    public async Task FetchAsync_HtmlResponse_ScriptShapedTextInOtherElementsIsNotReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_ClosingTagLookalikeInsideTheJsonIsPartOfTheJson()
+    {
+        const string html = "<script type=\"application/ld+json\">{\"@type\":\"Thing\",\"name\":\"</scripture>\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+        Assert.Contains("</scripture>", item.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_EncodedTypeAttributeIsDecoded()
+    {
+        const string html = "<script type=\"application/ld&#43;json\">{\"@type\":\"Thing\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_QuotedAttributesContainingAngleBracketsAreHandled()
+    {
+        const string html = """
+            <script data-note="1 > 0" type="application/ld+json" data-after='a > b'>{ "@type": "Before" }</script>
+            <script type="application/ld+json" data-note="1 > 0">{ "@type": "After" }</script>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("Before", result.JsonLd[0].Raw);
+        Assert.Contains("After", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
+    [Theory]
+    [InlineData("text/plain")]
+    [InlineData("application/json")]
+    [InlineData("application/xhtml+xml")]
+    public async Task FetchAsync_NonHtmlNonMarkdownResponse_ReportsNoJsonLd(string contentType)
+    {
+        const string body = "<script type=\"application/ld+json\">{ \"@type\": \"Thing\" }</script>";
+        var handler = new StubHandler(_ => Markdown(body, contentType));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_SeveralJsonValuesInOneScriptIsAnError()
+    {
+        const string html = "<script type=\"application/ld+json\">{ \"@type\": \"A\" } { \"@type\": \"B\" }</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_InvalidJsonLdIsKeptWithAnError()
+    {
+        var handler = new StubHandler(_ => Markdown("<script type=\"application/ld+json\">{ nope</script>", "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
     public async Task FetchAsync_SameHostRedirect_IsFollowed()
     {
         var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/old"
