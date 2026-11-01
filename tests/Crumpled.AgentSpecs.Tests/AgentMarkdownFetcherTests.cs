@@ -212,6 +212,7 @@ public class AgentMarkdownFetcherTests
     [Theory]
     [InlineData("text/plain")]
     [InlineData("application/json")]
+    [InlineData("application/xhtml+xml")]
     public async Task FetchAsync_NonHtmlNonMarkdownResponse_ReportsNoJsonLd(string contentType)
     {
         const string body = "<script type=\"application/ld+json\">{ \"@type\": \"Thing\" }</script>";

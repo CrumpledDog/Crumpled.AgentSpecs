@@ -72,8 +72,9 @@ namespace Crumpled.AgentSpecs.Services
 
                 var isMarkdown = response.Content.Headers.ContentType?.MediaType?.Equals("text/markdown", StringComparison.OrdinalIgnoreCase) == true;
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
-                var isHtml = string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase)
-                    || string.Equals(mediaType, "application/xhtml+xml", StringComparison.OrdinalIgnoreCase);
+                // Only text/html: the extractor reads HTML's raw-text rules, which differ from XHTML's (CDATA sections,
+                // XML character references), so application/xhtml+xml is deliberately not treated as HTML here.
+                var isHtml = string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase);
                 var parsed = CloudflareMarkdownParser.Parse(body);
 
                 return new AgentSpecsResponseModel
