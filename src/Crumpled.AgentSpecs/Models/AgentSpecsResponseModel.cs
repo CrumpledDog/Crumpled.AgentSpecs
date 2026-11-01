@@ -12,6 +12,9 @@ namespace Crumpled.AgentSpecs.Models
 
         public bool IsMarkdown { get; init; }
 
+        /// <summary>Whether the site Agent Specs runs in is hosted on Umbraco Cloud (not a property of the fetched page).</summary>
+        public bool IsUmbracoCloud { get; set; }
+
         public long ElapsedMs { get; init; }
 
         public bool Truncated { get; init; }

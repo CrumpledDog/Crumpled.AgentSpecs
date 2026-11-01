@@ -29,6 +29,7 @@ namespace Crumpled.AgentSpecs.Composers
             builder.Services.AddScoped<DocumentUrlTargetService>();
             builder.Services.AddScoped<DocumentUrlValidator>();
             builder.Services.AddScoped<AgentMarkdownFetcher>();
+            builder.Services.AddScoped<UmbracoCloudDetector>();
         }
     }
 }

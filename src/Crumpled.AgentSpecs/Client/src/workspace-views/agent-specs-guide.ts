@@ -61,31 +61,90 @@ export const GUIDE_LINKS = {
 };
 
 export type HelpLink = { label: string; href: string };
-export type HelpOption = { id: "cloudflare" | "umbraco-cloud"; title: string; text: string; links: Array<HelpLink> };
+export type HelpOption = {
+  id: "cloudflare" | "umbraco-cloud" | "ai-visibility";
+  title: string;
+  text: string;
+  links: Array<HelpLink>;
+};
+export type Help = { intro?: string; options: Array<HelpOption> };
 
-// "What can I do?" when a page isn't answered with markdown. Shown in the panel and repeated in the copied report.
-export const HELP_OPTIONS: Array<HelpOption> = [
-  {
-    id: "cloudflare",
-    title: "Your site is behind Cloudflare",
-    text:
-      "Switch on Markdown for Agents in your Cloudflare dashboard: select your site, open AI Crawl Control and " +
-      "turn on Markdown for Agents. It needs a Cloudflare Pro, Business or Enterprise plan.",
-    links: [{ label: "Cloudflare: Markdown for Agents", href: GUIDE_LINKS.markdownForAgents }],
-  },
-  {
-    id: "umbraco-cloud",
-    title: "Your site is on Umbraco Cloud",
-    text:
-      "Markdown for Agents isn't available on Umbraco Cloud itself. To use it, you need to put your hostname " +
-      "through your own Cloudflare account, on a plan that supports it. Or you could install the community " +
-      "package AI Visibility for Umbraco.",
-    links: [
-      { label: "Umbraco Cloud: your own Cloudflare account", href: GUIDE_LINKS.umbracoCloudCloudflare },
-      { label: "AI Visibility for Umbraco", href: GUIDE_LINKS.aiVisibilityPackage },
+const AI_VISIBILITY_LINK: HelpLink = { label: "AI Visibility for Umbraco", href: GUIDE_LINKS.aiVisibilityPackage };
+
+// The Cloudflare headers that are on every response from a site behind it.
+export function isCloudflare(headers: Record<string, string> | undefined | null): boolean {
+  if (!headers) return false;
+  const lower = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
+  return Boolean(lower["cf-ray"] || lower["cf-cache-status"] || lower["server"]?.toLowerCase() === "cloudflare");
+}
+
+// "What can I do?" when a page isn't answered with markdown. The advice depends on where the site is hosted, so only
+// what applies is shown. Used by the panel and repeated in the copied report.
+export function helpFor(hosting: { isUmbracoCloud: boolean; isCloudflare: boolean }): Help {
+  if (hosting.isUmbracoCloud) {
+    return {
+      intro:
+        "Your site is on Umbraco Cloud. Umbraco Cloud uses Cloudflare, but it doesn't currently support Markdown " +
+        "for Agents. We can't tell whether this site uses the Cloudflare that Umbraco Cloud provides or your own, " +
+        "so there are two ways forward.",
+      options: [
+        {
+          id: "umbraco-cloud",
+          title: "Option 1: use your own Cloudflare account",
+          text:
+            "Put your hostname through your own Cloudflare account, on a Pro, Business or Enterprise plan, then " +
+            "switch on Markdown for Agents (AI Crawl Control).",
+          links: [
+            { label: "Umbraco Cloud: your own Cloudflare account", href: GUIDE_LINKS.umbracoCloudCloudflare },
+            { label: "Cloudflare: Markdown for Agents", href: GUIDE_LINKS.markdownForAgents },
+          ],
+        },
+        {
+          id: "ai-visibility",
+          title: "Option 2: install AI Visibility for Umbraco",
+          text: "This community package makes the site answer agents with a markdown version of each page.",
+          links: [AI_VISIBILITY_LINK],
+        },
+      ],
+    };
+  }
+
+  if (hosting.isCloudflare) {
+    return {
+      intro: "Your site is using Cloudflare, but it isn't answering with markdown.",
+      options: [
+        {
+          id: "cloudflare",
+          title: "Switch on Markdown for Agents",
+          text:
+            "In your Cloudflare dashboard select your site, open AI Crawl Control and turn on Markdown for Agents. " +
+            "If you can't find it, the site is probably on the Free plan: Markdown for Agents needs at least a " +
+            "Cloudflare Pro plan (or Business or Enterprise), so the plan has to be upgraded first.",
+          links: [{ label: "Cloudflare: Markdown for Agents", href: GUIDE_LINKS.markdownForAgents }],
+        },
+        {
+          id: "ai-visibility",
+          title: "If upgrading Cloudflare isn't an option",
+          text: "Install the community package AI Visibility for Umbraco instead.",
+          links: [AI_VISIBILITY_LINK],
+        },
+      ],
+    };
+  }
+
+  return {
+    options: [
+      {
+        id: "ai-visibility",
+        title: "Install AI Visibility for Umbraco",
+        text:
+          "This site isn't behind Cloudflare or on Umbraco Cloud, so nothing in front of it can create a markdown " +
+          "version. The community package AI Visibility for Umbraco makes the site answer agents with one.",
+        links: [AI_VISIBILITY_LINK],
+      },
     ],
-  },
-];
+  };
+}
 
 export const HELP_NOT_SURE =
   "Not sure? Send this report to someone who looks after your website's technical setup. They can take it from here.";

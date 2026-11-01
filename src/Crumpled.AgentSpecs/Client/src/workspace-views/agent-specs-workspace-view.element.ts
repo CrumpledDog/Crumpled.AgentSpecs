@@ -21,7 +21,7 @@ import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown, getUrls } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
 import "./agent-specs-guide.element.js";
-import { HELP_NOT_SURE, HELP_OPTIONS, REPORT_FOOTER, parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
+import { HELP_NOT_SURE, REPORT_FOOTER, helpFor, isCloudflare, parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
 import type { SignalState } from "./agent-specs-guide.js";
 
 type DocumentLink = { culture: string | null; url: string };
@@ -463,9 +463,11 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       </div>`;
     }
 
+    const help = this.#help(result);
     return html`<div class="cta">
       <strong>Agents can't get a clean version of this page yet. What can I do?</strong>
-      ${HELP_OPTIONS.map(
+      ${help.intro ? html`<p>${help.intro}</p>` : nothing}
+      ${help.options.map(
         (option) => html`<div class="option">
           <h4>${option.title}</h4>
           <p>${option.text}</p>
@@ -501,16 +503,21 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       <p>${HELP_NOT_SURE}</p>
       <uui-button
         look="secondary"
-        label=${this._reportCopied ? "Copied" : "Copy Summary to Clipboard"}
+        label=${this._reportCopied ? "Copied" : "Copy summary for developers or IT"}
         @click=${() => this.#copyReport(result)}
       >
         <uui-icon name=${this._reportCopied ? "icon-check" : "icon-documents"}></uui-icon>
-        ${this._reportCopied ? "Copied" : "Copy Summary to Clipboard"}
+        ${this._reportCopied ? "Copied" : "Copy summary for developers or IT"}
       </uui-button>
     </div>`;
   }
 
+  #help(result: AgentSpecsResponseModel) {
+    return helpFor({ isUmbracoCloud: result.isUmbracoCloud, isCloudflare: isCloudflare(result.headers) });
+  }
+
   #copyReport(result: AgentSpecsResponseModel) {
+    const help = this.#help(result);
     const report = [
       `Agent Specs report for ${result.requestedUrl}`,
       `Response: ${[result.statusCode, result.contentType].filter(Boolean).join(" ")}`,
@@ -520,7 +527,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       "Requests for this page with Accept: text/markdown are not answered with markdown, so AI agents receive the " +
         "raw HTML instead. What can be done:",
       "",
-      ...HELP_OPTIONS.flatMap((option) => [
+      ...(help.intro ? [help.intro, ""] : []),
+      ...help.options.flatMap((option) => [
         `${option.title}`,
         option.text,
         ...option.links.map((link) => `${link.label}: ${link.href}`),

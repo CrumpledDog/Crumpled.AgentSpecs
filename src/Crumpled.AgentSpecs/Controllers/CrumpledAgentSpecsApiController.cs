@@ -17,6 +17,7 @@ namespace Crumpled.AgentSpecs.Controllers
         DocumentUrlTargetService targetService,
         DocumentUrlValidator urlValidator,
         AgentMarkdownFetcher fetcher,
+        UmbracoCloudDetector cloudDetector,
         IAuthorizationService authorizationService,
         ILogger<CrumpledAgentSpecsApiController> logger) : CrumpledAgentSpecsApiControllerBase
     {
@@ -83,7 +84,9 @@ namespace Crumpled.AgentSpecs.Controllers
 
             try
             {
-                return Ok(await fetcher.FetchAsync(requestUrl!, cancellationToken, displayUrl));
+                var result = await fetcher.FetchAsync(requestUrl!, cancellationToken, displayUrl);
+                result.IsUmbracoCloud = cloudDetector.IsUmbracoCloud();
+                return Ok(result);
             }
             catch (AgentSpecsFetchException ex)
             {
