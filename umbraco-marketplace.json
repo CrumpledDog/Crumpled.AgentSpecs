@@ -22,7 +22,8 @@
       }
     ]
   },
-  "Category": "Developer Tools",
+  "Category": "Artificial Intelligence",
+  "AlternateCategory": "Editor Tools",
   "LicenseTypes": [ "Free" ],
   "IssueTrackerUrl": "https://github.com/CrumpledDog/Crumpled.AgentSpecs/issues",
   "PackageType": "Package",
