@@ -54,6 +54,14 @@ function readGuidePreference(): boolean {
   }
 }
 
+type Finding = { tone: "positive" | "warning" | "info"; text: string };
+
+const FINDING_STYLES: Record<Finding["tone"], { icon: string; color: string }> = {
+  positive: { icon: "icon-check", color: "var(--uui-color-positive-standalone)" },
+  warning: { icon: "icon-alert", color: "var(--uui-color-warning-standalone)" },
+  info: { icon: "icon-info", color: "var(--uui-color-text-alt)" },
+};
+
 const SIGNAL_LABELS: Record<SignalState, string> = {
   allowed: "allowed",
   declined: "not allowed",
@@ -72,11 +80,13 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   @state() private _minimap = readMinimapPreference();
   @state() private _jsonExpanded = true;
   @state() private _showGuide = readGuidePreference();
+  @state() private _reportCopied = false;
 
   #unique?: string;
   #entityType?: string;
   #culture?: string | null;
   #reloadTimer?: ReturnType<typeof setTimeout>;
+  #copiedTimer?: ReturnType<typeof setTimeout>;
   #fetchId = 0;
   #userPickedUrl = false;
   #eventContext?: typeof UMB_ACTION_EVENT_CONTEXT.TYPE;
@@ -140,6 +150,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   override disconnectedCallback() {
     super.disconnectedCallback();
     clearTimeout(this.#reloadTimer);
+    clearTimeout(this.#copiedTimer);
     this.#eventContext?.removeEventListener(UmbRequestReloadStructureForEntityEvent.TYPE, this.#onReloadRequest);
   }
 
@@ -367,13 +378,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
           ${result.finalUrl} &middot; User-Agent: <code>${result.userAgent}</code>
         </p>
         ${this.#renderPlainSummary(result)}
-        ${!result.isMarkdown
-          ? html`<uui-tag color="warning" class="error">
-              <uui-icon name="icon-alert"></uui-icon>
-              This URL didn't answer with markdown (got ${result.contentType ?? "an unknown content type"}). The site
-              needs to respond to <code>Accept: text/markdown</code>, for example with Cloudflare Markdown for Agents.
-            </uui-tag>`
-          : nothing}
+        ${!result.isMarkdown ? this.#renderDeveloperCta(result) : nothing}
       </uui-box>
 
       <uui-box class="tabs-box">
@@ -397,36 +402,93 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     `;
   }
 
-  // The tags above are exact but terse; this says the same things in plain words for editors new to the subject.
-  #renderPlainSummary(result: AgentSpecsResponseModel) {
+  // The same three findings feed the on-screen summary and the report an editor can copy for their developers.
+  #findings(result: AgentSpecsResponseModel): Array<Finding> {
     const signals = parseContentSignal(result.headers["content-signal"]);
     const types = schemaTypes(result.jsonLd.map((item) => item.raw));
     const size = `${(result.raw.length / 1024).toFixed(1)} KB`;
 
-    const line = (icon: string, color: "positive" | "warning", content: unknown) =>
-      html`<li><uui-icon name=${icon} style="color: var(--uui-color-${color}-standalone)"></uui-icon> ${content}</li>`;
-
-    return html`<ul class="plain-summary">
-      ${result.statusCode >= 400
-        ? line("icon-alert", "warning", `The page returned an error (${result.statusCode}), so agents get no content.`)
+    const content: Finding =
+      result.statusCode >= 400
+        ? { tone: "warning", text: `The page returned an error (${result.statusCode}), so agents get no content.` }
         : result.isMarkdown
-          ? line("icon-check", "positive", `Agents receive a clean text version of this page (${size}).`)
-          : line("icon-alert", "warning", "Agents receive the page as raw HTML, which is harder for them to read.")}
-      ${signals
-        ? line(
-            "icon-check",
-            "positive",
-            `AI training: ${SIGNAL_LABELS[signals.aiTrain]} · Search results: ${SIGNAL_LABELS[signals.search]} · AI answers (live use): ${SIGNAL_LABELS[signals.aiInput]}`,
-          )
-        : line("icon-alert", "warning", "No content preferences are declared for AI use.")}
-      ${result.jsonLd.length
-        ? line(
-            "icon-check",
-            "positive",
-            `${result.jsonLd.length} structured data ${result.jsonLd.length === 1 ? "block" : "blocks"} found${types.length ? ` (${types.join(", ")})` : ""}.`,
-          )
-        : line("icon-alert", "warning", "No structured data (JSON-LD) found on this page.")}
+          ? { tone: "positive", text: `Agents receive a clean text version of this page (${size}).` }
+          : { tone: "warning", text: "Agents receive the page as raw HTML, which is harder for them to read." };
+
+    // Content signals are optional, so a missing header is information rather than a problem.
+    const preferences: Finding = signals
+      ? {
+          tone: "positive",
+          text: `AI training: ${SIGNAL_LABELS[signals.aiTrain]} · Search results: ${SIGNAL_LABELS[signals.search]} · AI answers (live use): ${SIGNAL_LABELS[signals.aiInput]}`,
+        }
+      : { tone: "info", text: "No content preferences are declared for AI use (optional)." };
+
+    const structured: Finding = result.jsonLd.length
+      ? {
+          tone: "positive",
+          text: `${result.jsonLd.length} structured data ${result.jsonLd.length === 1 ? "block" : "blocks"} found${types.length ? ` (${types.join(", ")})` : ""}.`,
+        }
+      : { tone: "warning", text: "No structured data (JSON-LD) found on this page." };
+
+    return [content, preferences, structured];
+  }
+
+  // The tags above are exact but terse; this says the same things in plain words for editors new to the subject.
+  #renderPlainSummary(result: AgentSpecsResponseModel) {
+    return html`<ul class="plain-summary">
+      ${this.#findings(result).map((finding) => {
+        const { icon, color } = FINDING_STYLES[finding.tone];
+        return html`<li><uui-icon name=${icon} style="color: ${color}"></uui-icon> ${finding.text}</li>`;
+      })}
     </ul>`;
+  }
+
+  // Shown when agents don't get markdown. It points editors at their developers (never at a vendor) and gives
+  // them something concrete to hand over.
+  #renderDeveloperCta(result: AgentSpecsResponseModel) {
+    if (result.statusCode >= 400) {
+      return html`<div class="cta">
+        <strong>Agents couldn't read this page.</strong>
+        <p>
+          The page returned an error (${result.statusCode}). Check that it is published and reachable, then fetch
+          again.
+        </p>
+      </div>`;
+    }
+
+    return html`<div class="cta">
+      <strong>Agents can't get a clean version of this page yet.</strong>
+      <p>
+        Your developers can make this page easier for AI agents to read. Share this report with them, and they can
+        work out the best way to do it for this site.
+      </p>
+      <uui-button
+        look="secondary"
+        label=${this._reportCopied ? "Copied" : "Copy summary for developers"}
+        @click=${() => this.#copyReport(result)}
+      >
+        <uui-icon name=${this._reportCopied ? "icon-check" : "icon-documents"}></uui-icon>
+        ${this._reportCopied ? "Copied" : "Copy summary for developers"}
+      </uui-button>
+    </div>`;
+  }
+
+  #copyReport(result: AgentSpecsResponseModel) {
+    const report = [
+      `Agent Specs report for ${result.requestedUrl}`,
+      `Response: ${[result.statusCode, result.contentType].filter(Boolean).join(" ")}`,
+      "",
+      ...this.#findings(result).map((finding) => `- ${finding.text}`),
+      "",
+      "Requests for this page with Accept: text/markdown are not answered with markdown. Could you advise on serving " +
+        "markdown to agents, either in the site itself or at the CDN or hosting layer (for example Cloudflare " +
+        "Markdown for Agents)?",
+    ].join("\n");
+    this.#copy(report);
+
+    this._reportCopied = true;
+    clearTimeout(this.#copiedTimer);
+    this.#copiedTimer = setTimeout(() => (this._reportCopied = false), 2000);
   }
 
   #renderPreview(result: AgentSpecsResponseModel) {
@@ -553,6 +615,23 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
 
       uui-box {
         margin-bottom: var(--uui-size-layout-1);
+      }
+
+      .cta {
+        margin-top: var(--uui-size-space-4);
+        padding: var(--uui-size-space-4) var(--uui-size-space-5);
+        border: 1px solid var(--uui-color-warning-standalone);
+        border-left-width: 4px;
+        border-radius: var(--uui-border-radius);
+        background: var(--uui-color-surface-alt);
+      }
+
+      .cta p {
+        margin: var(--uui-size-space-2) 0 var(--uui-size-space-4);
+      }
+
+      .cta p:last-child {
+        margin-bottom: 0;
       }
 
       .plain-summary {

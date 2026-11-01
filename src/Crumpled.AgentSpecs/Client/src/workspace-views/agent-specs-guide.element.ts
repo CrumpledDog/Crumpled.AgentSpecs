@@ -30,9 +30,16 @@ export class CrumpledAgentSpecsGuideElement extends UmbLitElement {
     const active =
       this.result !== undefined &&
       ((id === "jsonld" && this.tab === "jsonld") || (id === "markdown" && this.tab !== "jsonld"));
+    // Open the explanation for whatever the result is missing, so it isn't hidden behind "Read more". The binding
+    // only changes with the result, so an editor opening or closing a section themselves is left alone.
+    const missing =
+      this.result !== undefined &&
+      ((id === "markdown" && !this.result.isMarkdown) ||
+        (id === "signals" && !this.result.headers["content-signal"]) ||
+        (id === "jsonld" && this.result.jsonLd.length === 0));
     return html`<uui-box headline=${headline} class=${active ? "active" : ""}>
       <p class="lead">${summary}</p>
-      <details>
+      <details ?open=${missing}>
         <summary>Read more</summary>
         ${more}
       </details>
