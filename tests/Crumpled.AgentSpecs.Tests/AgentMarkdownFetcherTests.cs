@@ -209,6 +209,31 @@ public class AgentMarkdownFetcherTests
         Assert.All(result.JsonLd, item => Assert.Null(item.Error));
     }
 
+    [Theory]
+    [InlineData("text/plain")]
+    [InlineData("application/json")]
+    public async Task FetchAsync_NonHtmlNonMarkdownResponse_ReportsNoJsonLd(string contentType)
+    {
+        const string body = "<script type=\"application/ld+json\">{ \"@type\": \"Thing\" }</script>";
+        var handler = new StubHandler(_ => Markdown(body, contentType));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_SeveralJsonValuesInOneScriptIsAnError()
+    {
+        const string html = "<script type=\"application/ld+json\">{ \"@type\": \"A\" } { \"@type\": \"B\" }</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
     [Fact]
     public async Task FetchAsync_HtmlResponse_InvalidJsonLdIsKeptWithAnError()
     {

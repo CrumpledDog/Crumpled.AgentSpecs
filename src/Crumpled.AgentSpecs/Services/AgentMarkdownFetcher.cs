@@ -71,6 +71,9 @@ namespace Crumpled.AgentSpecs.Services
                 var body = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
 
                 var isMarkdown = response.Content.Headers.ContentType?.MediaType?.Equals("text/markdown", StringComparison.OrdinalIgnoreCase) == true;
+                var mediaType = response.Content.Headers.ContentType?.MediaType;
+                var isHtml = string.Equals(mediaType, "text/html", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(mediaType, "application/xhtml+xml", StringComparison.OrdinalIgnoreCase);
                 var parsed = CloudflareMarkdownParser.Parse(body);
 
                 return new AgentSpecsResponseModel
@@ -87,7 +90,7 @@ namespace Crumpled.AgentSpecs.Services
                     Raw = body,
                     Frontmatter = parsed.Frontmatter,
                     Markdown = isMarkdown ? parsed.Markdown : string.Empty,
-                    JsonLd = isMarkdown ? parsed.JsonLd : HtmlJsonLdExtractor.Extract(body),
+                    JsonLd = isMarkdown ? parsed.JsonLd : isHtml ? HtmlJsonLdExtractor.Extract(body) : [],
                 };
             }
         }

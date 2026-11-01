@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Crumpled.AgentSpecs.Models;
 
 namespace Crumpled.AgentSpecs.Services
@@ -68,7 +69,7 @@ namespace Crumpled.AgentSpecs.Services
                     var json = html[contentStart..close].Trim();
                     if (json.Length > 0)
                     {
-                        items.AddRange(CloudflareMarkdownParser.SplitJsonValues(json));
+                        items.Add(ParseSingleDocument(json));
                     }
                 }
 
@@ -78,6 +79,21 @@ namespace Crumpled.AgentSpecs.Services
             }
 
             return items;
+        }
+
+        // A JSON-LD script holds one JSON document: several values in one script are invalid, so it is reported as an
+        // error rather than split (a markdown response's trailing block is different, and is split).
+        private static JsonLdModel ParseSingleDocument(string json)
+        {
+            try
+            {
+                using var doc = JsonDocument.Parse(json);
+                return new JsonLdModel { Raw = doc.RootElement.GetRawText() };
+            }
+            catch (JsonException ex)
+            {
+                return new JsonLdModel { Raw = json, Error = ex.Message };
+            }
         }
 
         // The index of the end tag for name (the whole name, not a longer one such as </scripture>), or the end of the html.
