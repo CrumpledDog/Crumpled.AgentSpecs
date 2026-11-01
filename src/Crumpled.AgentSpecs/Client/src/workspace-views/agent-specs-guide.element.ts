@@ -30,13 +30,13 @@ export class CrumpledAgentSpecsGuideElement extends UmbLitElement {
     const active =
       this.result !== undefined &&
       ((id === "jsonld" && this.tab === "jsonld") || (id === "markdown" && this.tab !== "jsonld"));
-    // Open the explanation for whatever the result is missing, so it isn't hidden behind "Read more". The binding
-    // only changes with the result, so an editor opening or closing a section themselves is left alone.
+    // Open the explanation for a problem the result shows, so it isn't hidden behind "Read more". Markdown and
+    // structured data are independent of each other, so each opens on its own. Content signals are optional and
+    // stay closed. The binding only changes with the result, so an editor opening or closing a section themselves
+    // is left alone.
     const missing =
       this.result !== undefined &&
-      ((id === "markdown" && !this.result.isMarkdown) ||
-        (id === "signals" && !this.result.headers["content-signal"]) ||
-        (id === "jsonld" && this.result.jsonLd.length === 0));
+      ((id === "markdown" && !this.result.isMarkdown) || (id === "jsonld" && this.result.jsonLd.length === 0));
     return html`<uui-box headline=${headline} class=${active ? "active" : ""}>
       <p class="lead">${summary}</p>
       <details ?open=${missing}>
@@ -123,6 +123,11 @@ export class CrumpledAgentSpecsGuideElement extends UmbLitElement {
             machines understand who published the page, what it covers and how it relates to the rest of the site.
             That supports richer search results and more accurate summaries. It helps machines understand the page;
             it doesn't guarantee a place in any AI answer.
+          </p>
+          <p>
+            <strong>This is separate from markdown.</strong> Structured data lives in the page's HTML, so it can be
+            added whether or not the site can serve markdown to agents, and switching on Markdown for Agents doesn't
+            add it.
           </p>
           <p>Use <strong>Validate at schema.org</strong> on the JSON-LD tab to check it for errors.</p>
           <p>

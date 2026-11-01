@@ -492,14 +492,20 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
           </div>
         </div>`,
       )}
+      ${result.jsonLd.length === 0
+        ? html`<p>
+            <strong>Structured data is separate</strong>${this._showGuide ? ", see the guide to the right" : ""}. It
+            can be added whether or not markdown is available.
+          </p>`
+        : nothing}
       <p>${HELP_NOT_SURE}</p>
       <uui-button
         look="secondary"
-        label=${this._reportCopied ? "Copied" : "Copy summary for developers"}
+        label=${this._reportCopied ? "Copied" : "Copy Summary to Clipboard"}
         @click=${() => this.#copyReport(result)}
       >
         <uui-icon name=${this._reportCopied ? "icon-check" : "icon-documents"}></uui-icon>
-        ${this._reportCopied ? "Copied" : "Copy summary for developers"}
+        ${this._reportCopied ? "Copied" : "Copy Summary to Clipboard"}
       </uui-button>
     </div>`;
   }
