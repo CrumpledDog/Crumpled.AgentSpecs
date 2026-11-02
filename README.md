@@ -8,6 +8,8 @@ serves to agents.
 
 <img src="https://raw.githubusercontent.com/CrumpledDog/Crumpled.AgentSpecs/develop/v1/icons/icon.png" width="120" height="120" alt="">
 
+[![Build Status](https://github.com/CrumpledDog/Crumpled.AgentSpecs/actions/workflows/ci.yml/badge.svg?branch=develop/v1)](https://github.com/CrumpledDog/Crumpled.AgentSpecs/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/vpre/Crumpled.AgentSpecs.svg)](https://www.nuget.org/packages/Crumpled.AgentSpecs/) [![NuGet Downloads](https://img.shields.io/nuget/dt/Crumpled.AgentSpecs.svg)](https://www.nuget.org/packages/Crumpled.AgentSpecs/)
+
 ![The Agent Specs view on a content item: the request summary, plain-language findings and the markdown preview](https://raw.githubusercontent.com/CrumpledDog/Crumpled.AgentSpecs/develop/v1/docs/agent-specs-view.png)
 
 ## Installation
