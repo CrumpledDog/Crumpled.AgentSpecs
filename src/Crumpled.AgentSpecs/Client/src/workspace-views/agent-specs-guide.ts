@@ -66,6 +66,8 @@ export type HelpOption = {
   title: string;
   text: string;
   links: Array<HelpLink>;
+  // Show the screenshot of the Markdown for Agents switch in the Cloudflare dashboard.
+  screenshot?: boolean;
 };
 export type Help = { intro?: string; options: Array<HelpOption> };
 
@@ -93,7 +95,8 @@ export function helpFor(hosting: { isUmbracoCloud: boolean; isCloudflare: boolea
           title: "Option 1: use your own Cloudflare account",
           text:
             "Put your hostname through your own Cloudflare account, on a Pro, Business or Enterprise plan, then " +
-            "switch on Markdown for Agents (AI Crawl Control).",
+            "switch on Markdown for Agents (AI Crawl Control), as shown below.",
+          screenshot: true,
           links: [
             { label: "Umbraco Cloud: your own Cloudflare account", href: GUIDE_LINKS.umbracoCloudCloudflare },
             { label: "Cloudflare: Markdown for Agents", href: GUIDE_LINKS.markdownForAgents },
@@ -120,6 +123,7 @@ export function helpFor(hosting: { isUmbracoCloud: boolean; isCloudflare: boolea
             "In your Cloudflare dashboard select your site, open AI Crawl Control and turn on Markdown for Agents. " +
             "If you can't find it, the site is probably on the Free plan: Markdown for Agents needs at least a " +
             "Cloudflare Pro plan (or Business or Enterprise), so the plan has to be upgraded first.",
+          screenshot: true,
           links: [{ label: "Cloudflare: Markdown for Agents", href: GUIDE_LINKS.markdownForAgents }],
         },
         {
