@@ -8,6 +8,8 @@ serves to agents.
 
 <img src="https://raw.githubusercontent.com/CrumpledDog/Crumpled.AgentSpecs/develop/v1/icons/icon.png" width="120" height="120" alt="">
 
+![The Agent Specs view on a content item: the request summary, plain-language findings and the markdown preview](https://raw.githubusercontent.com/CrumpledDog/Crumpled.AgentSpecs/develop/v1/docs/agent-specs-view.png)
+
 ## Installation
 
 ```bash
