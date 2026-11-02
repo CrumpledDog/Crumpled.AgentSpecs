@@ -140,7 +140,7 @@ app.Use(async (context, next) =>
 });
 ```
 
-The DemoSite in this repo has a fuller version, [`MarkdownForAgentsMiddleware`](src/Crumpled.AgentSpecs.DemoSite/MarkdownForAgents/MarkdownForAgentsMiddleware.cs),
+The DemoSite in this repo has a fuller version, [`MarkdownForAgentsMiddleware`](https://github.com/CrumpledDog/Crumpled.AgentSpecs/blob/HEAD/src/Crumpled.AgentSpecs.DemoSite/MarkdownForAgents/MarkdownForAgentsMiddleware.cs),
 which also strips headers, navigation and footers, and adds front matter and a trailing JSON-LD block the way
 Cloudflare does. It exists for testing only and is not part of the package.
 
@@ -160,8 +160,8 @@ dotnet add package Crumpled.AgentSpecs --version "1.*"
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the branching strategy and formatting requirements.
+See [CONTRIBUTING.md](https://github.com/CrumpledDog/Crumpled.AgentSpecs/blob/HEAD/CONTRIBUTING.md) for the branching strategy and formatting requirements.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](https://github.com/CrumpledDog/Crumpled.AgentSpecs/blob/HEAD/LICENSE)
