@@ -78,17 +78,58 @@ namespace Crumpled.AgentSpecs.Services
                     continue;
                 }
 
-                var value = line[(colon + 1)..].Trim();
-                if (value.Length >= 2 && (value[0] == '"' || value[0] == '\'') && value[^1] == value[0])
-                {
-                    value = value[1..^1];
-                }
-
-                fields[line[..colon].Trim()] = value;
+                fields[line[..colon].Trim()] = UnquoteScalar(line[(colon + 1)..].Trim());
             }
 
             text = text[Math.Min(end + 4, text.Length)..];
             return new FrontmatterModel { Raw = block, Fields = fields };
+        }
+
+        // A quoted YAML scalar is decoded, not just stripped of its quotes: a double-quoted one can hold escapes
+        // (\" \\ \n \t \uXXXX), and a single-quoted one writes a literal quote as ''.
+        private static string UnquoteScalar(string value)
+        {
+            if (value.Length < 2 || value[^1] != value[0])
+            {
+                return value;
+            }
+
+            if (value[0] == (char)39)
+            {
+                return value[1..^1].Replace("''", ((char)39).ToString());
+            }
+
+            if (value[0] != '"')
+            {
+                return value;
+            }
+
+            var inner = value[1..^1];
+            var decoded = new StringBuilder(inner.Length);
+            for (var i = 0; i < inner.Length; i++)
+            {
+                if (inner[i] != '\\' || i + 1 >= inner.Length)
+                {
+                    decoded.Append(inner[i]);
+                    continue;
+                }
+
+                var next = inner[++i];
+                switch (next)
+                {
+                    case 'n': decoded.Append('\n'); break;
+                    case 't': decoded.Append('\t'); break;
+                    case 'r': decoded.Append('\r'); break;
+                    case '0': decoded.Append('\0'); break;
+                    case 'u' when i + 4 < inner.Length && ushort.TryParse(inner.AsSpan(i + 1, 4), System.Globalization.NumberStyles.HexNumber, null, out var code):
+                        decoded.Append((char)code);
+                        i += 4;
+                        break;
+                    default: decoded.Append(next); break;
+                }
+            }
+
+            return decoded.ToString();
         }
 
         private static IReadOnlyList<JsonLdModel> ExtractJsonLd(ref string text)

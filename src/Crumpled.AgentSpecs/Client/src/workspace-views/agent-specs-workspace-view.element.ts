@@ -89,6 +89,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   #reloadTimer?: ReturnType<typeof setTimeout>;
   #copiedTimer?: ReturnType<typeof setTimeout>;
   #fetchId = 0;
+  #linksId = 0;
   #userPickedUrl = false;
   #eventContext?: typeof UMB_ACTION_EVENT_CONTEXT.TYPE;
 
@@ -158,11 +159,13 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   async #loadLinks() {
     const unique = this.#unique;
     if (!unique) return;
+    const linksId = ++this.#linksId;
 
     // The server lists the same URLs as the Links panel, after any URL processing a site has registered, so a
     // site that narrows its Links panel (for example to one hostname) gets the same list here.
     const { data } = await getUrls({ query: { documentId: unique } });
-    if (unique !== this.#unique) return;
+    // A newer load (for example the reload after publishing) supersedes this one, whichever answers last.
+    if (unique !== this.#unique || linksId !== this.#linksId) return;
     this._links = (data?.urls ?? []).map((link) => ({ culture: link.culture ?? null, url: link.url }));
     this.#selectDefaultLink();
   }
@@ -239,13 +242,15 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     }
   }
 
-  async #copy(text: string) {
+  async #copy(text: string): Promise<boolean> {
     const notifications = await this.getContext(UMB_NOTIFICATION_CONTEXT);
     try {
       await navigator.clipboard.writeText(text);
       notifications?.peek("positive", { data: { headline: "Copied", message: "Copied to clipboard" } });
+      return true;
     } catch {
       notifications?.peek("danger", { data: { headline: "Copy failed", message: "Could not copy to clipboard" } });
+      return false;
     }
   }
 
@@ -516,7 +521,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     return helpFor({ isUmbracoCloud: result.isUmbracoCloud, isCloudflare: isCloudflare(result.headers) });
   }
 
-  #copyReport(result: AgentSpecsResponseModel) {
+  async #copyReport(result: AgentSpecsResponseModel) {
     const help = this.#help(result);
     const report = [
       `Agent Specs report for ${result.requestedUrl}`,
@@ -536,7 +541,8 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
       ]),
       REPORT_FOOTER,
     ].join("\n");
-    this.#copy(report);
+    // Only say "Copied" once the clipboard write has actually succeeded.
+    if (!(await this.#copy(report))) return;
 
     this._reportCopied = true;
     clearTimeout(this.#copiedTimer);

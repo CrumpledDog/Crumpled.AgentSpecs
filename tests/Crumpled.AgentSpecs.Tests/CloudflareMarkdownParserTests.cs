@@ -74,6 +74,16 @@ public class CloudflareMarkdownParserTests
     }
 
     [Fact]
+    public void Parse_Frontmatter_DecodesQuotedScalars()
+    {
+        var result = CloudflareMarkdownParser.Parse("---\ntitle: \"Say \\\"hi\\\" \\\\ there\\nnext \\u00e9\"\ndescription: 'It''s here'\nplain: it's \"fine\"\n---\n\nBody");
+
+        Assert.Equal("Say \"hi\" \\ there\nnext é", result.Frontmatter.Fields["title"]);
+        Assert.Equal("It's here", result.Frontmatter.Fields["description"]);
+        Assert.Equal("it's \"fine\"", result.Frontmatter.Fields["plain"]);
+    }
+
+    [Fact]
     public void Parse_Frontmatter_ParsesQuotedAndPlainValues()
     {
         var result = CloudflareMarkdownParser.Parse("---\ntitle: \"A: title\"\ndescription: plain text\n---\n\nBody");
