@@ -1,0 +1,548 @@
+using System.Net;
+using System.Text;
+using Crumpled.AgentSpecs.Services;
+using Microsoft.Extensions.Options;
+using NSubstitute;
+
+namespace Crumpled.AgentSpecs.Tests;
+
+public class AgentMarkdownFetcherTests
+{
+    private sealed class StubHandler(Func<HttpRequestMessage, HttpResponseMessage> respond) : HttpMessageHandler
+    {
+        public List<HttpRequestMessage> Requests { get; } = [];
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Requests.Add(request);
+            return Task.FromResult(respond(request));
+        }
+    }
+
+    private static HttpResponseMessage Markdown(string body, string contentType = "text/markdown; charset=utf-8") =>
+        new(HttpStatusCode.OK) { Content = new StringContent(body, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue(contentType.Split(';')[0]) { CharSet = "utf-8" }) };
+
+    private static AgentMarkdownFetcher CreateFetcher(StubHandler handler, AgentSpecsOptions? settings = null)
+    {
+        var factory = Substitute.For<IHttpClientFactory>();
+        factory.CreateClient(AgentMarkdownFetcher.HttpClientName).Returns(_ => new HttpClient(handler, disposeHandler: false));
+        return new AgentMarkdownFetcher(factory, Options.Create(settings ?? new AgentSpecsOptions()));
+    }
+
+    [Fact]
+    public async Task FetchAsync_DecodesTheBodyUsingTheDeclaredCharset()
+    {
+        var latin1 = Encoding.GetEncoding("iso-8859-1");
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(latin1.GetBytes("café"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/markdown") { CharSet = "iso-8859-1" };
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+        Assert.Equal("café", result.Markdown);
+    }
+
+    [Theory]
+    [InlineData("not-a-real-charset")]
+    [InlineData("utf-7")]
+    [InlineData("shift_jis")]
+    public async Task FetchAsync_UnknownOrUnavailableCharset_FallsBackToUtf8(string charset)
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("café"));
+            content.Headers.TryAddWithoutValidation("Content-Type", $"text/markdown; charset={charset}");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_NoCharsetDeclared_DecodesAsUtf8()
+    {
+        var handler = new StubHandler(_ =>
+        {
+            var content = new ByteArrayContent(Encoding.UTF8.GetBytes("café"));
+            content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("text/markdown");
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = content };
+        });
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("café", result.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_SendsAcceptMarkdownAndDefaultUserAgent()
+    {
+        var handler = new StubHandler(_ => Markdown("# Hello"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var request = Assert.Single(handler.Requests);
+        Assert.Contains("text/markdown", request.Headers.Accept.ToString());
+        Assert.Equal("Crumpled.AgentSpecs/1.0", request.Headers.UserAgent.ToString());
+        Assert.Equal(request.Headers.UserAgent.ToString(), result.UserAgent);
+        Assert.True(result.IsMarkdown);
+        Assert.Equal("# Hello", result.Markdown);
+    }
+
+    [Fact]
+    public async Task FetchAsync_ConfiguredUserAgent_IsUsed()
+    {
+        var handler = new StubHandler(_ => Markdown("x"));
+        var fetcher = CreateFetcher(handler, new AgentSpecsOptions { UserAgent = "MyBot/2.0" });
+
+        await fetcher.FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal("MyBot/2.0", handler.Requests.Single().Headers.UserAgent.ToString());
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_IsFlaggedAsNotMarkdown()
+    {
+        var handler = new StubHandler(_ => Markdown("<html></html>", "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.False(result.IsMarkdown);
+        Assert.Equal(string.Empty, result.Markdown);
+        Assert.Equal("<html></html>", result.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_StillReportsJsonLdFromScriptTags()
+    {
+        const string html = """
+            <html><head>
+            <script type="application/ld+json">{ "@type": "WebSite", "name": "A" }</script>
+            <script async src="/x.js"></script>
+            <SCRIPT TYPE='application/ld+json' id="org">
+              { "@type": "Organization" }
+            </SCRIPT>
+            </head><body></body></html>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.False(result.IsMarkdown);
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("WebSite", result.JsonLd[0].Raw);
+        Assert.Contains("Organization", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
+    [Theory]
+    [InlineData("<!-- <script type=\"application/ld+json\">{ \"@type\": \"Old\" }</script> -->")]
+    [InlineData("<script data-type=\"application/ld+json\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"application/ld+json-other\">{ \"@type\": \"X\" }</script>")]
+    [InlineData("<script type=\"text/javascript\">var s = '<script type=\"application/ld+json\">{}';</script>")]
+    public async Task FetchAsync_HtmlResponse_OnlyRealJsonLdScriptsAreReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Theory]
+    [InlineData("<div data-example='<script type=\"application/ld+json\">{\"@type\":\"Example\"}</script>'></div>")]
+    [InlineData("<style>/* <script type=\"application/ld+json\">{\"@type\":\"X\"}</script> */</style>")]
+    [InlineData("<textarea><script type=\"application/ld+json\">{\"@type\":\"X\"}</script></textarea>")]
+    public async Task FetchAsync_HtmlResponse_ScriptShapedTextInOtherElementsIsNotReported(string html)
+    {
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_ClosingTagLookalikeInsideTheJsonIsPartOfTheJson()
+    {
+        const string html = "<script type=\"application/ld+json\">{\"@type\":\"Thing\",\"name\":\"</scripture>\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+        Assert.Contains("</scripture>", item.Raw);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_EncodedTypeAttributeIsDecoded()
+    {
+        const string html = "<script type=\"application/ld&#43;json\">{\"@type\":\"Thing\"}</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.Null(item.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_QuotedAttributesContainingAngleBracketsAreHandled()
+    {
+        const string html = """
+            <script data-note="1 > 0" type="application/ld+json" data-after='a > b'>{ "@type": "Before" }</script>
+            <script type="application/ld+json" data-note="1 > 0">{ "@type": "After" }</script>
+            """;
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Equal(2, result.JsonLd.Count);
+        Assert.Contains("Before", result.JsonLd[0].Raw);
+        Assert.Contains("After", result.JsonLd[1].Raw);
+        Assert.All(result.JsonLd, item => Assert.Null(item.Error));
+    }
+
+    [Theory]
+    [InlineData("text/plain")]
+    [InlineData("application/json")]
+    [InlineData("application/xhtml+xml")]
+    public async Task FetchAsync_NonHtmlNonMarkdownResponse_ReportsNoJsonLd(string contentType)
+    {
+        const string body = "<script type=\"application/ld+json\">{ \"@type\": \"Thing\" }</script>";
+        var handler = new StubHandler(_ => Markdown(body, contentType));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.Empty(result.JsonLd);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_SeveralJsonValuesInOneScriptIsAnError()
+    {
+        const string html = "<script type=\"application/ld+json\">{ \"@type\": \"A\" } { \"@type\": \"B\" }</script>";
+        var handler = new StubHandler(_ => Markdown(html, "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HtmlResponse_InvalidJsonLdIsKeptWithAnError()
+    {
+        var handler = new StubHandler(_ => Markdown("<script type=\"application/ld+json\">{ nope</script>", "text/html"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        var item = Assert.Single(result.JsonLd);
+        Assert.NotNull(item.Error);
+    }
+
+    [Fact]
+    public async Task FetchAsync_SameHostRedirect_IsFollowed()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/old"
+            ? new HttpResponseMessage(HttpStatusCode.Moved) { Headers = { Location = new Uri("/new", UriKind.Relative) } }
+            : Markdown("moved"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("https://example.com/old"), CancellationToken.None);
+
+        Assert.Equal("https://example.com/new", result.FinalUrl);
+        Assert.Equal("moved", result.Markdown);
+    }
+
+    [Fact]
+    public async Task FetchAsync_CrossHostRedirect_IsRefused()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://internal.local/secret") } });
+
+        await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri("https://example.com/"), CancellationToken.None));
+        Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task FetchAsync_BodyOverLimit_IsTruncated()
+    {
+        var handler = new StubHandler(_ => Markdown(new string('a', 100)));
+
+        var result = await CreateFetcher(handler, new AgentSpecsOptions { MaxBodyBytes = 10 })
+            .FetchAsync(new Uri("https://example.com/"), CancellationToken.None);
+
+        Assert.True(result.Truncated);
+        Assert.Equal(10, result.Raw.Length);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/page", "https://example.com:8080/admin")]
+    [InlineData("https://example.com/page", "http://example.com/page")]
+    [InlineData("http://example.com/page", "http://example.com:8080/admin")]
+    [InlineData("http://example.com/page", "https://example.com:8443/page")]
+    public async Task FetchAsync_RedirectToADifferentPortOrSchemeOfTheSameHost_IsRefused(string requested, string redirect)
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(redirect) } });
+
+        await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri(requested), CancellationToken.None));
+        Assert.Single(handler.Requests);
+    }
+
+    [Theory]
+    [InlineData("https://example.com/p", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=old", "https://example.com/p?token=secret", "https://example.com/p?token=redacted")]
+    [InlineData("https://example.com/p?token=", "https://example.com/p?token=&token=secret", "https://example.com/p?token=&token=redacted")]
+    [InlineData("https://example.com/p?a=1", "https://example.com/p?a=1&t=secret", "https://example.com/p?a=1&t=redacted")]
+    [InlineData("https://example.com/p?a=1", "https://example.com/p?a=1", "https://example.com/p?a=1")]
+    public async Task FetchAsync_AnythingTheRequestAddedOrChangedInTheQuery_IsRedactedFromTheReportedUrls(string display, string request, string expectedFinal)
+    {
+        var handler = new StubHandler(_ => Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri(request), CancellationToken.None, new Uri(display));
+
+        Assert.Equal(display, result.RequestedUrl);
+        Assert.Equal(expectedFinal, result.FinalUrl);
+        Assert.Equal(request, Assert.Single(handler.Requests).RequestUri!.ToString());
+    }
+
+    [Fact]
+    public async Task FetchAsync_LoginRedirectNestingTheToken_ReportsTheRedirectWithoutIt()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/about/"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("/login?ReturnUrl=%2Fabout%2F%3Ftoken%3Dsecret", UriKind.Relative) } }
+            : Markdown("login"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl);
+        Assert.Equal("https://example.com/login?ReturnUrl=redacted", result.FinalUrl);
+    }
+
+    [Theory]
+    [InlineData("/login?secret=1")]
+    [InlineData("/login?%73ecret=1")]
+    public async Task FetchAsync_RedirectWhoseParameterNameIsTheToken_ReportsItWithoutIt(string location)
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/about/"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.Relative) } }
+            : Markdown("login"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RedirectToAHostNamedAfterTheToken_ErrorDetailDoesNotExposeIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found)
+        {
+            Headers = { Location = new Uri("https://supersecret1.auth.example/login") },
+        });
+
+        var ex = await Assert.ThrowsAsync<AgentSpecsFetchException>(() => CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=supersecret1"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/")));
+
+        Assert.DoesNotContain("supersecret1", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RedactBody_RemovesTheTokenFromAnExceptionText()
+    {
+        var text = new HttpRequestException("Failed for https://example.com/about/?token=supersecret1").ToString();
+
+        var redacted = AgentMarkdownFetcher.RedactBody(
+            text,
+            new Uri("https://example.com/about/?token=supersecret1"),
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("supersecret1", redacted);
+    }
+
+    [Theory]
+    [InlineData("title: \"abc\\u002Bdefgh\"")]
+    [InlineData("title: \"abc\\x2Bdefgh\"")]
+    [InlineData("title: abc&#43;defgh")]
+    [InlineData("title: abc%2Bdefgh")]
+    [InlineData("title: \"\\u0061bc+defgh\"")]
+    public async Task FetchAsync_PageThatEchoesTheTokenEscaped_ReportsNothingOfIt(string frontmatterLine)
+    {
+        var body = $"---\n{frontmatterLine}\n---\n\nBody\n\n```json\n{{\"@type\":\"Thing\",\"name\":\"abc\\u002Bdefgh\"}}\n```";
+        var handler = new StubHandler(_ => Markdown(body));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=abc%2Bdefgh"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        var everything = result.Raw + result.Markdown + string.Join(string.Empty, result.Frontmatter.Fields.Values) + string.Join(string.Empty, result.JsonLd.Select(item => item.Raw));
+        Assert.DoesNotContain("defgh", everything);
+        Assert.Contains("[redacted]", result.Frontmatter.Fields["title"]);
+    }
+
+    [Fact]
+    public async Task FetchAsync_PageThatReflectsTheToken_ReportsTheBodyWithoutIt()
+    {
+        const string body = "---\ntitle: login\n---\n\n[Sign in](/login?ReturnUrl=%2Fabout%2F%3Ftoken%3Dsupersecret1)\n\nhttps://example.com/about/?token=supersecret1";
+        var handler = new StubHandler(_ => Markdown(body));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=supersecret1"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("supersecret1", result.Raw + result.Markdown + string.Join(string.Empty, result.Frontmatter.Fields.Values));
+        Assert.Contains("[redacted]", result.Markdown);
+    }
+
+    [Theory]
+    [InlineData("secret%20value", "secret+value")]
+    [InlineData("secret+value", "secret%20value")]
+    [InlineData("secret%2Bvalue", "secret%2bvalue")]
+    public async Task FetchAsync_RedirectThatReEncodesTheToken_StillRedactsIt(string requestValue, string redirectValue)
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/p"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("/p2?token=" + redirectValue, UriKind.Relative) } }
+            : Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/p?token=" + requestValue),
+            CancellationToken.None,
+            new Uri("https://example.com/p"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl);
+        Assert.Equal("https://example.com/p2?token=redacted", result.FinalUrl);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RefusedRedirectNestingTheToken_ExceptionMessageDoesNotContainIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found)
+        {
+            Headers = { Location = new Uri("https://other.example/login?ReturnUrl=%2Fabout%2F%3Ftoken%3Dsecret") },
+        });
+
+        var exception = await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri("https://example.com/about/?token=secret"), CancellationToken.None, new Uri("https://example.com/about/")));
+
+        Assert.DoesNotContain("secret", exception.Message);
+    }
+
+    [Fact]
+    public async Task FetchAsync_ParametersTheListedUrlHasAreKeptThroughARedirect()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/p"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("/p2?page=2&token=secret", UriKind.Relative) } }
+            : Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/p?page=2&token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/p?page=2"));
+
+        Assert.Equal("https://example.com/p2?page=2&token=redacted", result.FinalUrl);
+    }
+
+    [Theory]
+    [InlineData("/login#token=secret", "https://example.com/login#redacted")]
+    [InlineData("/login/secret", "https://example.com/login/redacted")]
+    [InlineData("/login/secret/continue", "https://example.com/login/redacted/continue")]
+    [InlineData("/login?next=1#secret", "https://example.com/login?next=1#redacted")]
+    public async Task FetchAsync_RedirectCarryingTheTokenInThePathOrFragment_ReportsItRedacted(string location, string expected)
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/p"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.Relative) } }
+            : Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/p?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/p"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl);
+        Assert.Equal(expected, result.FinalUrl);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RedirectCarryingTheTokenAsUserInfo_ReportsTheUrlWithoutIt()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/p"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://user:secret@example.com/next") } }
+            : Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/p?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/p"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl);
+        Assert.Equal("https://example.com/next", result.FinalUrl);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RefusedRedirectCarryingTheTokenInThePathAndFragment_ExceptionMessageDoesNotContainIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found)
+        {
+            Headers = { Location = new Uri("https://other.example/login/secret#token=secret") },
+        });
+
+        var exception = await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri("https://example.com/p?token=secret"), CancellationToken.None, new Uri("https://example.com/p")));
+
+        Assert.DoesNotContain("secret", exception.Message);
+    }
+
+    [Fact]
+    public async Task FetchAsync_PathSegmentsTheListedUrlHasAreKeptEvenIfTheyMatchASecret()
+    {
+        var handler = new StubHandler(_ => Markdown("ok"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/secret/page?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/secret/page"));
+
+        Assert.Equal("https://example.com/secret/page?token=redacted", result.FinalUrl);
+    }
+
+    [Fact]
+    public async Task FetchAsync_RedirectToAnotherOriginWithTheToken_ExceptionMessageRedactsIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri("https://other.example/x?token=secret") } });
+
+        var exception = await Assert.ThrowsAsync<AgentSpecsFetchException>(() =>
+            CreateFetcher(handler).FetchAsync(new Uri("https://example.com/p?token=secret"), CancellationToken.None, new Uri("https://example.com/p")));
+
+        Assert.DoesNotContain("secret", exception.Message);
+    }
+
+    [Fact]
+    public async Task FetchAsync_HttpToHttpsUpgradeOnTheDefaultPorts_IsFollowed()
+    {
+        var handler = new StubHandler(request => request.RequestUri!.Scheme == "http"
+            ? new HttpResponseMessage(HttpStatusCode.MovedPermanently) { Headers = { Location = new Uri("https://example.com/page") } }
+            : Markdown("secure"));
+
+        var result = await CreateFetcher(handler).FetchAsync(new Uri("http://example.com/page"), CancellationToken.None);
+
+        Assert.Equal("https://example.com/page", result.FinalUrl);
+        Assert.Equal("secure", result.Markdown);
+    }
+}

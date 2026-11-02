@@ -14,7 +14,7 @@ public class CrumpledAgentSpecsOpenApiComposer : IComposer
         builder.AddBackOfficeOpenApiDocument(
             Constants.ApiName,
             document => document
-                .WithTitle("Crumpled Package Template Backoffice API")
+                .WithTitle("Crumpled Agent Specs Backoffice API")
                 .WithBackOfficeAuthentication()
                 .WithJsonOptions(Umbraco.Cms.Core.Constants.JsonOptionsNames.BackOffice)
                 .ConfigureOpenApiOptions(options =>

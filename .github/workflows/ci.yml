@@ -138,7 +138,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: read
-      checks: write
     steps:
     - uses: actions/checkout@v5
       with:
@@ -186,16 +185,8 @@ jobs:
     - name: Dotnet Format check
       run: dotnet format --verify-no-changes --verbosity diagnostic
 
-    - name: Run Tests
-      run: dotnet test tests/Crumpled.AgentSpecs.Tests/Crumpled.AgentSpecs.Tests.csproj --configuration Release --logger "trx;LogFileName=test-results.trx" --results-directory ./TestResults
-
-    - name: Publish Test Report
-      uses: dorny/test-reporter@v3
-      if: always()
-      with:
-        name: Test Results
-        path: TestResults/*.trx
-        reporter: dotnet-trx
+    - name: Run Unit Tests
+      run: dotnet test tests/Crumpled.AgentSpecs.Tests/Crumpled.AgentSpecs.Tests.csproj --configuration Release --logger "GitHubActions;summary.includePassedTests=true;summary.includeSkippedTests=true"
 
     - name: Cache NuGet
       uses: actions/cache@v6

@@ -1,0 +1,41 @@
+﻿@inherits UmbracoViewPage
+@{
+    Layout = null;
+}
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>@Model.Name | Crumpled.AgentSpecs DemoSite</title>
+    <meta name="title" content="@Model.Name">
+    <meta name="description" content="A demo page for exercising the Agent Specs view with markdown and JSON-LD.">
+    @Html.Raw("<script type=\"application/ld+json\">" + System.Text.Json.JsonSerializer.Serialize(new Dictionary<string, string>
+    {
+        ["@context"] = "https://schema.org",
+        ["@type"] = "WebPage",
+        ["name"] = Model.Name,
+        ["description"] = "A demo page for exercising the Agent Specs view.",
+    }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true }) + "</script>")
+</head>
+<body>
+    <header><a href="/">Site header (stripped for agents)</a></header>
+    <nav><a href="/">Home</a></nav>
+    <main>
+        <h1>@Model.Name</h1>
+        <p>This is a <strong>demo page</strong> with a <a href="https://docs.umbraco.com">link</a>, a list and a table.</p>
+        <ul>
+            <li>Markdown preview</li>
+            <li>Markdown source</li>
+            <li>JSON-LD</li>
+        </ul>
+        <table>
+            <thead><tr><th>Tab</th><th>Shows</th></tr></thead>
+            <tbody>
+                <tr><td>Preview</td><td>Rendered markdown</td></tr>
+                <tr><td>JSON-LD</td><td>Structured data</td></tr>
+            </tbody>
+        </table>
+    </main>
+    <footer>Site footer (stripped for agents)</footer>
+</body>
+</html>

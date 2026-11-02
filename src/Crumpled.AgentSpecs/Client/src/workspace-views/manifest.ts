@@ -1,0 +1,23 @@
+export const manifests: Array<UmbExtensionManifest> = [
+  {
+    type: "workspaceView",
+    alias: "Crumpled.AgentSpecs.WorkspaceView",
+    name: "Crumpled Agent Specs Workspace View",
+    element: () => import("./agent-specs-workspace-view.element.js"),
+    weight: 50,
+    meta: {
+      label: "Agent Specs",
+      pathname: "agent-specs",
+      icon: "icon-glasses",
+    },
+    conditions: [
+      {
+        alias: "Umb.Condition.WorkspaceAlias",
+        match: "Umb.Workspace.Document",
+      },
+      {
+        alias: "Crumpled.AgentSpecs.Condition.Enabled",
+      },
+    ],
+  },
+];
