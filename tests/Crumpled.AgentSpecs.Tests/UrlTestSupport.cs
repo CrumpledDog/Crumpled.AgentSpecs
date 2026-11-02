@@ -28,9 +28,20 @@ internal static class UrlTestSupport
     public static (DocumentUrlTargetService Service, IContentService ContentService) CreateTargetService(
         bool documentExists,
         IEnumerable<string> documentUrls,
-        params IAgentSpecsUrlProcessor[] processors)
+        params IAgentSpecsUrlProcessor[] processors) =>
+        CreateTargetService(documentExists, documentUrls, processors, excludedDocumentTypes: null);
+
+    public static (DocumentUrlTargetService Service, IContentService ContentService) CreateTargetService(
+        bool documentExists,
+        IEnumerable<string> documentUrls,
+        IAgentSpecsUrlProcessor[] processors,
+        string[]? excludedDocumentTypes,
+        string documentTypeAlias = "page")
     {
         var content = Substitute.For<IContent>();
+        var contentType = Substitute.For<ISimpleContentType>();
+        contentType.Alias.Returns(documentTypeAlias);
+        content.ContentType.Returns(contentType);
         var contentService = Substitute.For<IContentService>();
         contentService.GetById(DocumentId).Returns(documentExists ? content : null);
 
@@ -39,7 +50,7 @@ internal static class UrlTestSupport
             .Select(url => new DocumentUrlInfo { Culture = null, Url = url, Provider = "test", Message = null })
             .ToArray());
 
-        return (new DocumentUrlTargetService(contentService, factory, processors), contentService);
+        return (new DocumentUrlTargetService(contentService, factory, processors, Options.Create(new AgentSpecsOptions { ExcludedDocumentTypes = excludedDocumentTypes ?? [] })), contentService);
     }
 
     public static DocumentUrlValidator CreateValidator(

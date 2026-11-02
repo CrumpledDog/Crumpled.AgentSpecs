@@ -15,6 +15,9 @@ export const manifests: Array<UmbExtensionManifest> = [
         alias: "Umb.Condition.WorkspaceAlias",
         match: "Umb.Workspace.Document",
       },
+      {
+        alias: "Crumpled.AgentSpecs.Condition.Enabled",
+      },
     ],
   },
 ];

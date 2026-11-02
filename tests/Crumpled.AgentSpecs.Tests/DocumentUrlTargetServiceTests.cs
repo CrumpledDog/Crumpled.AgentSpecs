@@ -5,6 +5,24 @@ namespace Crumpled.AgentSpecs.Tests;
 
 public class DocumentUrlTargetServiceTests
 {
+    [Theory]
+    [InlineData("folder")]
+    [InlineData("FOLDER")]
+    public async Task GetTargetsAsync_ExcludedDocumentType_OffersNoUrls(string excluded)
+    {
+        var (service, _) = CreateTargetService(true, ["/about/"], [], [excluded], documentTypeAlias: "Folder");
+
+        Assert.Empty(await service.GetTargetsAsync(DocumentId) ?? []);
+    }
+
+    [Fact]
+    public async Task GetTargetsAsync_OtherDocumentType_StillOffersUrls()
+    {
+        var (service, _) = CreateTargetService(true, ["/about/"], [], ["folder"], documentTypeAlias: "page");
+
+        Assert.Single(await service.GetTargetsAsync(DocumentId) ?? []);
+    }
+
     [Fact]
     public async Task GetTargetsAsync_UnknownDocument_ReturnsNull()
     {

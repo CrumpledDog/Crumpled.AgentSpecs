@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Api.Management.Factories;
 using Umbraco.Cms.Core.Services;
 
@@ -15,7 +16,8 @@ namespace Crumpled.AgentSpecs.Services
     public class DocumentUrlTargetService(
         IContentService contentService,
         IDocumentUrlFactory documentUrlFactory,
-        IEnumerable<IAgentSpecsUrlProcessor> processors)
+        IEnumerable<IAgentSpecsUrlProcessor> processors,
+        IOptions<AgentSpecsOptions> options)
     {
         /// <returns>The targets, or <c>null</c> when the document doesn't exist.</returns>
         public async Task<IReadOnlyList<DocumentUrlTarget>?> GetTargetsAsync(Guid documentId, CancellationToken cancellationToken = default)
@@ -24,6 +26,12 @@ namespace Crumpled.AgentSpecs.Services
             if (content is null)
             {
                 return null;
+            }
+
+            // An excluded document type has no Agent Specs view, so it offers nothing to request either.
+            if (options.Value.ExcludedDocumentTypes.Contains(content.ContentType.Alias, StringComparer.OrdinalIgnoreCase))
+            {
+                return [];
             }
 
             var listed = (await documentUrlFactory.CreateUrlsAsync(content))

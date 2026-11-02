@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Umbraco.Cms.Core.Actions;
 using Umbraco.Cms.Core.Security.Authorization;
 using Umbraco.Cms.Web.Common.Authorization;
@@ -18,9 +19,18 @@ namespace Crumpled.AgentSpecs.Controllers
         DocumentUrlValidator urlValidator,
         AgentMarkdownFetcher fetcher,
         UmbracoCloudDetector cloudDetector,
+        IOptions<AgentSpecsOptions> options,
         IAuthorizationService authorizationService,
         ILogger<CrumpledAgentSpecsApiController> logger) : CrumpledAgentSpecsApiControllerBase
     {
+        /// <summary>
+        /// The settings the backoffice needs to decide where to show the Agent Specs view.
+        /// </summary>
+        [HttpGet("settings")]
+        [ProducesResponseType<AgentSpecsSettingsResponseModel>(StatusCodes.Status200OK)]
+        public IActionResult GetSettings() =>
+            Ok(new AgentSpecsSettingsResponseModel { ExcludedDocumentTypes = options.Value.ExcludedDocumentTypes });
+
         /// <summary>
         /// Lists the front-end URLs that can be requested for the document: the ones behind the Links panel,
         /// after any <see cref="IAgentSpecsUrlProcessor"/> has narrowed or rewritten them.

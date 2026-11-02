@@ -5,6 +5,12 @@ namespace Crumpled.AgentSpecs.Models
         public required IReadOnlyList<AgentSpecsUrlModel> Urls { get; init; }
     }
 
+    public class AgentSpecsSettingsResponseModel
+    {
+        /// <summary>Aliases of the document types that don't get the Agent Specs view.</summary>
+        public required IReadOnlyList<string> ExcludedDocumentTypes { get; init; }
+    }
+
     public class AgentSpecsUrlModel
     {
         public string? Culture { get; init; }

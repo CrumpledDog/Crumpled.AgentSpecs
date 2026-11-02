@@ -50,14 +50,15 @@ public class CrumpledAgentSpecsApiControllerTests
         Func<HttpRequestMessage, HttpResponseMessage>? respond = null,
         IAgentSpecsUrlProcessor? processor = null,
         bool documentExists = true,
-        bool umbracoCloud = false)
+        bool umbracoCloud = false,
+        string[]? excludedDocumentTypes = null)
     {
         var handler = new StubHandler(respond ?? (_ => new HttpResponseMessage(HttpStatusCode.OK)));
         var clients = Substitute.For<IHttpClientFactory>();
         clients.CreateClient(AgentMarkdownFetcher.HttpClientName).Returns(_ => new HttpClient(handler, disposeHandler: false));
-        var options = Options.Create(new AgentSpecsOptions());
+        var options = Options.Create(new AgentSpecsOptions { ExcludedDocumentTypes = excludedDocumentTypes ?? [] });
 
-        var (targetService, contentService) = CreateTargetService(documentExists, [PageUrl], processor is null ? [] : [processor]);
+        var (targetService, contentService) = CreateTargetService(documentExists, [PageUrl], processor is null ? [] : [processor], excludedDocumentTypes);
 
         var accessor = Substitute.For<IHttpContextAccessor>();
         accessor.HttpContext.Returns(new DefaultHttpContext());
@@ -71,6 +72,7 @@ public class CrumpledAgentSpecsApiControllerTests
             new DocumentUrlValidator(targetService, accessor, options),
             new AgentMarkdownFetcher(clients, options),
             UmbracoCloudDetectorTests.CreateDetector(umbracoCloud),
+            options,
             authorization,
             NullLogger<CrumpledAgentSpecsApiController>.Instance)
         {
@@ -212,6 +214,38 @@ public class CrumpledAgentSpecsApiControllerTests
         var result = await controller.GetUrls(DocumentId, CancellationToken.None);
 
         Assert.IsType<NotFoundObjectResult>(result);
+    }
+
+    [Fact]
+    public void GetSettings_ReturnsTheExcludedDocumentTypes()
+    {
+        var (controller, _, _) = Create(authorized: true, excludedDocumentTypes: ["folder", "siteSettings"]);
+
+        var model = Assert.IsType<AgentSpecsSettingsResponseModel>(Assert.IsType<OkObjectResult>(controller.GetSettings()).Value);
+
+        Assert.Equal(["folder", "siteSettings"], model.ExcludedDocumentTypes);
+    }
+
+    [Fact]
+    public async Task GetMarkdown_ExcludedDocumentType_IsRefusedAndNothingIsFetched()
+    {
+        var (controller, _, handler) = Create(authorized: true, excludedDocumentTypes: ["page"]);
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        Assert.IsType<BadRequestObjectResult>(result);
+        Assert.Empty(handler.Requests);
+    }
+
+    [Fact]
+    public async Task GetUrls_ExcludedDocumentType_ListsNothing()
+    {
+        var (controller, _, _) = Create(authorized: true, excludedDocumentTypes: ["page"]);
+
+        var result = await controller.GetUrls(DocumentId, CancellationToken.None);
+
+        var model = Assert.IsType<AgentSpecsUrlsResponseModel>(Assert.IsType<OkObjectResult>(result).Value);
+        Assert.Empty(model.Urls);
     }
 
     [Fact]
