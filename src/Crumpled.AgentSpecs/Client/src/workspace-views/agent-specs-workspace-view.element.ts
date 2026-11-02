@@ -476,7 +476,7 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
         (option) => html`<div class="option">
           <h4>${option.title}</h4>
           <p>${option.text}</p>
-          ${option.id === "cloudflare"
+          ${option.screenshot
             ? html`<img
                 class="screenshot"
                 src="/App_Plugins/CrumpledAgentSpecs/cloudflare-markdown-for-agents.png"
