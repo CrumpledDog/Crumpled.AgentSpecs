@@ -375,6 +375,27 @@ public class AgentMarkdownFetcherTests
         Assert.DoesNotContain("supersecret1", redacted);
     }
 
+    [Theory]
+    [InlineData("title: \"abc\\u002Bdefgh\"")]
+    [InlineData("title: \"abc\\x2Bdefgh\"")]
+    [InlineData("title: abc&#43;defgh")]
+    [InlineData("title: abc%2Bdefgh")]
+    [InlineData("title: \"\\u0061bc+defgh\"")]
+    public async Task FetchAsync_PageThatEchoesTheTokenEscaped_ReportsNothingOfIt(string frontmatterLine)
+    {
+        var body = $"---\n{frontmatterLine}\n---\n\nBody\n\n```json\n{{\"@type\":\"Thing\",\"name\":\"abc\\u002Bdefgh\"}}\n```";
+        var handler = new StubHandler(_ => Markdown(body));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=abc%2Bdefgh"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        var everything = result.Raw + result.Markdown + string.Join(string.Empty, result.Frontmatter.Fields.Values) + string.Join(string.Empty, result.JsonLd.Select(item => item.Raw));
+        Assert.DoesNotContain("defgh", everything);
+        Assert.Contains("[redacted]", result.Frontmatter.Fields["title"]);
+    }
+
     [Fact]
     public async Task FetchAsync_PageThatReflectsTheToken_ReportsTheBodyWithoutIt()
     {

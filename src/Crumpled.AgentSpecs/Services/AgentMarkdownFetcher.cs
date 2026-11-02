@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.RegularExpressions;
 using Crumpled.AgentSpecs.Models;
 using Microsoft.Extensions.Options;
 
@@ -110,14 +111,45 @@ namespace Crumpled.AgentSpecs.Services
 
             foreach (var secret in secrets)
             {
-                var forms = new[] { secret, Uri.EscapeDataString(secret), WebUtility.UrlEncode(secret), WebUtility.HtmlEncode(secret) }.Distinct();
-                foreach (var form in forms)
-                {
-                    body = body.Replace(form, "[redacted]", StringComparison.OrdinalIgnoreCase);
-                }
+                body = EscapedPattern(secret).Replace(body, "[redacted]");
             }
 
             return body;
+        }
+
+        // Matches the secret however it is written: each character may independently be literal, percent-encoded
+        // (%2B), a JSON/YAML escape (+, \x2B) or an HTML entity (&#43;, &#x2B;, &amp;), so a response that
+        // echoes it escaped (title: "abc+def") is redacted before it is parsed and the escape decoded.
+        private static Regex EscapedPattern(string secret)
+        {
+            var parts = secret.Select(character =>
+            {
+                var alternatives = new List<string>
+                {
+                    Regex.Escape(character.ToString()),
+                    $"%{(int)character:X2}",
+                    $"\\\\u{(int)character:X4}",
+                    $"&#{(int)character};",
+                    $"&#x{(int)character:X};",
+                };
+                if (character < 256)
+                {
+                    alternatives.Add($"\\\\x{(int)character:X2}");
+                }
+
+                switch (character)
+                {
+                    case ' ': alternatives.Add("\\+"); break;
+                    case '&': alternatives.Add("&amp;"); break;
+                    case '<': alternatives.Add("&lt;"); break;
+                    case '>': alternatives.Add("&gt;"); break;
+                    case '"': alternatives.Add("&quot;"); break;
+                }
+
+                return "(?:" + string.Join("|", alternatives) + ")";
+            });
+
+            return new Regex(string.Concat(parts), RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromSeconds(2));
         }
 
         // URL processing may add to the request's query string (an access token, say), or change a parameter the
