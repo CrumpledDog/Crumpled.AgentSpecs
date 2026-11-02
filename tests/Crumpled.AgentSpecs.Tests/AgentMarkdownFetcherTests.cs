@@ -347,6 +347,35 @@ public class AgentMarkdownFetcherTests
     }
 
     [Fact]
+    public async Task FetchAsync_RedirectToAHostNamedAfterTheToken_ErrorDetailDoesNotExposeIt()
+    {
+        var handler = new StubHandler(_ => new HttpResponseMessage(HttpStatusCode.Found)
+        {
+            Headers = { Location = new Uri("https://supersecret1.auth.example/login") },
+        });
+
+        var ex = await Assert.ThrowsAsync<AgentSpecsFetchException>(() => CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=supersecret1"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/")));
+
+        Assert.DoesNotContain("supersecret1", ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void RedactBody_RemovesTheTokenFromAnExceptionText()
+    {
+        var text = new HttpRequestException("Failed for https://example.com/about/?token=supersecret1").ToString();
+
+        var redacted = AgentMarkdownFetcher.RedactBody(
+            text,
+            new Uri("https://example.com/about/?token=supersecret1"),
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("supersecret1", redacted);
+    }
+
+    [Fact]
     public async Task FetchAsync_PageThatReflectsTheToken_ReportsTheBodyWithoutIt()
     {
         const string body = "---\ntitle: login\n---\n\n[Sign in](/login?ReturnUrl=%2Fabout%2F%3Ftoken%3Dsupersecret1)\n\nhttps://example.com/about/?token=supersecret1";

@@ -100,7 +100,7 @@ namespace Crumpled.AgentSpecs.Services
         // The values URL processing added to the request. A page can reflect them (a login form's ReturnUrl field, say),
         // so they are also removed from the body, in the forms they are likely to be echoed in. Very short values are
         // left alone: they would mangle ordinary text and are not credentials.
-        private static string RedactBody(string body, Uri request, Uri display)
+        internal static string RedactBody(string body, Uri request, Uri display)
         {
             var displayPairs = QueryPairs(display).ToHashSet();
             var secrets = QueryPairs(request)
@@ -138,7 +138,12 @@ namespace Crumpled.AgentSpecs.Services
             var displayNames = displayPairs.Select(pair => pair.Name).ToHashSet();
 
             // The authority is rebuilt without user info, which has no business being shown.
-            var result = new StringBuilder($"{reported.Scheme}://{reported.Authority}");
+            // The host can carry a secret too (https://secret.auth.example/login), unless it is the one the listed URL has.
+            var authority = !string.Equals(reported.Authority, display.Authority, StringComparison.OrdinalIgnoreCase)
+                && secretValues.Any(secret => reported.Authority.Contains(secret, StringComparison.OrdinalIgnoreCase))
+                    ? "redacted"
+                    : reported.Authority;
+            var result = new StringBuilder($"{reported.Scheme}://{authority}");
 
             var displaySegments = display.AbsolutePath.Split('/').Select(FormDecode).ToHashSet();
             result.Append(string.Join("/", reported.AbsolutePath.Split('/').Select(segment =>

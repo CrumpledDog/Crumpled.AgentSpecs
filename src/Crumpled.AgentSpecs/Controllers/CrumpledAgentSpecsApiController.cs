@@ -106,8 +106,12 @@ namespace Crumpled.AgentSpecs.Controllers
             catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or OperationCanceledException or IOException)
             {
                 // The framework's messages can include the request URL, which may carry an access token, so they are
-                // logged for diagnosis but never returned.
-                logger.LogWarning(ex, "Requesting {Url} for document {DocumentId} failed", displayUrl, documentId);
+                // never returned, and are logged only with what URL processing added to the request redacted.
+                logger.LogWarning(
+                    "Requesting {Url} for document {DocumentId} failed: {Error}",
+                    displayUrl,
+                    documentId,
+                    AgentMarkdownFetcher.RedactBody(ex.ToString(), requestUrl!, displayUrl!));
                 return BadGateway("The page could not be reached, or its response did not complete.");
             }
         }
