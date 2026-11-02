@@ -21,7 +21,8 @@ import { UMB_VARIANT_CONTEXT } from "@umbraco-cms/backoffice/variant";
 import { getMarkdown, getUrls } from "../api/index.js";
 import type { AgentSpecsResponseModel } from "../api/index.js";
 import "./agent-specs-guide.element.js";
-import { HELP_NOT_SURE, REPORT_FOOTER, helpFor, isCloudflare, parseContentSignal, schemaTypes } from "./agent-specs-guide.js";
+import { HELP_NOT_SURE, helpFor, isCloudflare, parseContentSignal, reportHtml, reportText, schemaTypes } from "./agent-specs-guide.js";
+import type { ReportParts } from "./agent-specs-guide.js";
 import type { SignalState } from "./agent-specs-guide.js";
 
 type DocumentLink = { culture: string | null; url: string };
@@ -242,10 +243,25 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
     }
   }
 
-  async #copy(text: string): Promise<boolean> {
+  // With html, both formats go on the clipboard and the place it is pasted into picks the richer one (an email or
+  // chat takes the HTML, a plain text field the text). Where rich copy isn't available it is text only.
+  async #copy(text: string, html?: string): Promise<boolean> {
     const notifications = await this.getContext(UMB_NOTIFICATION_CONTEXT);
     try {
-      await navigator.clipboard.writeText(text);
+      if (html && typeof ClipboardItem !== "undefined" && navigator.clipboard.write) {
+        try {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              "text/plain": new Blob([text], { type: "text/plain" }),
+              "text/html": new Blob([html], { type: "text/html" }),
+            }),
+          ]);
+        } catch {
+          await navigator.clipboard.writeText(text);
+        }
+      } else {
+        await navigator.clipboard.writeText(text);
+      }
       notifications?.peek("positive", { data: { headline: "Copied", message: "Copied to clipboard" } });
       return true;
     } catch {
@@ -522,27 +538,17 @@ export class CrumpledAgentSpecsWorkspaceViewElement extends UmbLitElement {
   }
 
   async #copyReport(result: AgentSpecsResponseModel) {
-    const help = this.#help(result);
-    const report = [
-      `Agent Specs report for ${result.requestedUrl}`,
-      `Response: ${[result.statusCode, result.contentType].filter(Boolean).join(" ")}`,
-      "",
-      ...this.#findings(result).map((finding) => `- ${finding.text}`),
-      "",
-      "Requests for this page with Accept: text/markdown are not answered with markdown, so AI agents receive the " +
+    const parts: ReportParts = {
+      title: `Agent Specs report for ${result.requestedUrl}`,
+      response: `Response: ${[result.statusCode, result.contentType].filter(Boolean).join(" ")}`,
+      findings: this.#findings(result).map((finding) => finding.text),
+      summary:
+        "Requests for this page with Accept: text/markdown are not answered with markdown, so AI agents receive the " +
         "raw HTML instead. What can be done:",
-      "",
-      ...(help.intro ? [help.intro, ""] : []),
-      ...help.options.flatMap((option) => [
-        `${option.title}`,
-        option.text,
-        ...option.links.map((link) => `${link.label}: ${link.href}`),
-        "",
-      ]),
-      REPORT_FOOTER,
-    ].join("\n");
+      help: this.#help(result),
+    };
     // Only say "Copied" once the clipboard write has actually succeeded.
-    if (!(await this.#copy(report))) return;
+    if (!(await this.#copy(reportText(parts), reportHtml(parts)))) return;
 
     this._reportCopied = true;
     clearTimeout(this.#copiedTimer);
