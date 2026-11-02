@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using Crumpled.AgentSpecs.Models;
@@ -68,7 +69,7 @@ namespace Crumpled.AgentSpecs.Services
 
                 var (bytes, truncated) = await ReadBodyAsync(response, settings.MaxBodyBytes, timeout.Token);
                 stopwatch.Stop();
-                var body = Decode(bytes, response.Content.Headers.ContentType?.CharSet);
+                var body = RedactBody(Decode(bytes, response.Content.Headers.ContentType?.CharSet), url, displayUrl);
 
                 var isMarkdown = response.Content.Headers.ContentType?.MediaType?.Equals("text/markdown", StringComparison.OrdinalIgnoreCase) == true;
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
@@ -96,6 +97,29 @@ namespace Crumpled.AgentSpecs.Services
             }
         }
 
+        // The values URL processing added to the request. A page can reflect them (a login form's ReturnUrl field, say),
+        // so they are also removed from the body, in the forms they are likely to be echoed in. Very short values are
+        // left alone: they would mangle ordinary text and are not credentials.
+        private static string RedactBody(string body, Uri request, Uri display)
+        {
+            var displayPairs = QueryPairs(display).ToHashSet();
+            var secrets = QueryPairs(request)
+                .Where(pair => !displayPairs.Contains(pair) && pair.Value.Length >= 6)
+                .Select(pair => pair.Value)
+                .Distinct();
+
+            foreach (var secret in secrets)
+            {
+                var forms = new[] { secret, Uri.EscapeDataString(secret), WebUtility.UrlEncode(secret), WebUtility.HtmlEncode(secret) }.Distinct();
+                foreach (var form in forms)
+                {
+                    body = body.Replace(form, "[redacted]", StringComparison.OrdinalIgnoreCase);
+                }
+            }
+
+            return body;
+        }
+
         // URL processing may add to the request's query string (an access token, say), or change a parameter the
         // listed URL already has. None of that may be reported back to the browser, and a redirect can carry it on
         // anywhere in the URL: re-encoded, nested inside another parameter (ReturnUrl=%2Fpage%3Ftoken%3Dsecret), as a
@@ -111,6 +135,7 @@ namespace Crumpled.AgentSpecs.Services
             }
 
             var secretValues = secretPairs.Select(pair => pair.Value).Where(value => value.Length > 0).Distinct().ToList();
+            var displayNames = displayPairs.Select(pair => pair.Name).ToHashSet();
 
             // The authority is rebuilt without user info, which has no business being shown.
             var result = new StringBuilder($"{reported.Scheme}://{reported.Authority}");
@@ -127,6 +152,12 @@ namespace Crumpled.AgentSpecs.Services
                     var rawName = separator < 0 ? part : part[..separator];
                     var rawValue = separator < 0 ? string.Empty : part[(separator + 1)..];
                     var pair = (FormDecode(rawName).ToLowerInvariant(), FormDecode(rawValue));
+
+                    // A parameter *name* can be a secret too (/login?secret=1).
+                    if (!displayNames.Contains(pair.Item1) && ContainsAny(rawName, secretValues))
+                    {
+                        return "redacted=redacted";
+                    }
 
                     // A parameter the listed URL legitimately has is kept. Anything else is redacted if it is a secret the
                     // request added, or if it contains one.

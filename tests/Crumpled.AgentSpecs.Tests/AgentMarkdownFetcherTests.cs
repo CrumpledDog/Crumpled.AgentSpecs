@@ -330,6 +330,38 @@ public class AgentMarkdownFetcherTests
     }
 
     [Theory]
+    [InlineData("/login?secret=1")]
+    [InlineData("/login?%73ecret=1")]
+    public async Task FetchAsync_RedirectWhoseParameterNameIsTheToken_ReportsItWithoutIt(string location)
+    {
+        var handler = new StubHandler(request => request.RequestUri!.AbsolutePath == "/about/"
+            ? new HttpResponseMessage(HttpStatusCode.Found) { Headers = { Location = new Uri(location, UriKind.Relative) } }
+            : Markdown("login"));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=secret"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("secret", result.FinalUrl, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task FetchAsync_PageThatReflectsTheToken_ReportsTheBodyWithoutIt()
+    {
+        const string body = "---\ntitle: login\n---\n\n[Sign in](/login?ReturnUrl=%2Fabout%2F%3Ftoken%3Dsupersecret1)\n\nhttps://example.com/about/?token=supersecret1";
+        var handler = new StubHandler(_ => Markdown(body));
+
+        var result = await CreateFetcher(handler).FetchAsync(
+            new Uri("https://example.com/about/?token=supersecret1"),
+            CancellationToken.None,
+            new Uri("https://example.com/about/"));
+
+        Assert.DoesNotContain("supersecret1", result.Raw + result.Markdown + string.Join(string.Empty, result.Frontmatter.Fields.Values));
+        Assert.Contains("[redacted]", result.Markdown);
+    }
+
+    [Theory]
     [InlineData("secret%20value", "secret+value")]
     [InlineData("secret+value", "secret%20value")]
     [InlineData("secret%2Bvalue", "secret%2bvalue")]

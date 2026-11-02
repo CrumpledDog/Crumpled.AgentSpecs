@@ -103,7 +103,7 @@ namespace Crumpled.AgentSpecs.Controllers
                 // The message is safe to show by construction: it never contains what URL processing added to the request.
                 return BadGateway(ex.Message);
             }
-            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or TaskCanceledException or IOException)
+            catch (Exception ex) when (ex is HttpRequestException or InvalidOperationException or OperationCanceledException or IOException)
             {
                 // The framework's messages can include the request URL, which may carry an access token, so they are
                 // logged for diagnosis but never returned.

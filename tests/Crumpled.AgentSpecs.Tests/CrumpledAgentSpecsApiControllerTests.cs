@@ -120,6 +120,16 @@ public class CrumpledAgentSpecsApiControllerTests
     }
 
     [Fact]
+    public async Task GetMarkdown_TimeoutThatSurfacesAsOperationCanceled_Returns502()
+    {
+        var (controller, _, _) = Create(authorized: true, _ => throw new OperationCanceledException());
+
+        var result = await controller.GetMarkdown(DocumentId, PageUrl, CancellationToken.None);
+
+        Assert.Equal(StatusCodes.Status502BadGateway, Assert.IsType<ObjectResult>(result).StatusCode);
+    }
+
+    [Fact]
     public async Task GetMarkdown_UpstreamBodyReadFailure_Returns502()
     {
         var (controller, _, _) = Create(authorized: true, _ => new HttpResponseMessage(HttpStatusCode.OK) { Content = new FailingBody() });

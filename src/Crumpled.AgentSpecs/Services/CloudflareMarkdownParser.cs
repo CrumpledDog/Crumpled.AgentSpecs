@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using Crumpled.AgentSpecs.Models;
 
 namespace Crumpled.AgentSpecs.Services
@@ -8,8 +9,12 @@ namespace Crumpled.AgentSpecs.Services
     /// Splits a Cloudflare "Markdown for Agents" response into YAML frontmatter, markdown body and the
     /// trailing fenced json block holding any JSON-LD.
     /// </summary>
-    public static class CloudflareMarkdownParser
+    public static partial class CloudflareMarkdownParser
     {
+        // What makes a json fence JSON-LD rather than an ordinary example: one of its reserved keywords.
+        [GeneratedRegex("\"@(context|type|graph|id)\"", RegexOptions.CultureInvariant)]
+        private static partial Regex JsonLdSignal();
+
         private const string FenceOpen = "```json\n";
 
         public record Result(FrontmatterModel Frontmatter, string Markdown, IReadOnlyList<JsonLdModel> JsonLd);
@@ -103,6 +108,12 @@ namespace Crumpled.AgentSpecs.Services
             }
 
             var json = text[contentStart..Math.Max(contentStart, close)];
+            if (!JsonLdSignal().IsMatch(json))
+            {
+                // A trailing json example in the page's own content, not structured data: leave it in the body.
+                return [];
+            }
+
             text = text[..open];
             return SplitJsonValues(json);
         }

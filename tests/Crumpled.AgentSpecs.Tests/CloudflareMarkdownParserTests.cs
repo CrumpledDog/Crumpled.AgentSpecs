@@ -57,11 +57,20 @@ public class CloudflareMarkdownParserTests
     [Fact]
     public void Parse_InvalidJson_KeepsRawBlockWithError()
     {
-        var result = CloudflareMarkdownParser.Parse("Body\n\n```json\n{ not json\n```");
+        var result = CloudflareMarkdownParser.Parse("Body\n\n```json\n{ \"@type\": not json\n```");
 
         var block = Assert.Single(result.JsonLd);
         Assert.NotNull(block.Error);
         Assert.Contains("not json", block.Raw);
+    }
+
+    [Fact]
+    public void Parse_TrailingJsonExampleWithoutJsonLdKeywords_StaysInTheBody()
+    {
+        var result = CloudflareMarkdownParser.Parse("# Config\n\nSet this:\n\n```json\n{\"enabled\":true}\n```");
+
+        Assert.Empty(result.JsonLd);
+        Assert.Contains("{\"enabled\":true}", result.Markdown);
     }
 
     [Fact]
