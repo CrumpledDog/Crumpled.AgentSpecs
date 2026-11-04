@@ -262,6 +262,16 @@ jobs:
           dotnet pack "$proj" --configuration Release -o artifacts/nuget /p:PackageVersion=${{ needs.setup.outputs.semver }} /p:FileVersion=${{ steps.update-version.outputs.file-version }}
         done
 
+    # Packing regenerates umbraco-marketplace-readme.md from README.md. The Umbraco Marketplace reads that file from
+    # the repository, so a stale committed copy would publish an out-of-date listing.
+    - name: Check the Marketplace readme is up to date
+      run: |
+        if [ -n "$(git status --porcelain -- umbraco-marketplace-readme.md)" ]; then
+          echo "::error::umbraco-marketplace-readme.md is out of date. Run 'dotnet pack' locally and commit the regenerated file."
+          git diff -- umbraco-marketplace-readme.md
+          exit 1
+        fi
+
     - name: Upload NuGet Packages for Testing
       uses: actions/upload-artifact@v7
       with:
